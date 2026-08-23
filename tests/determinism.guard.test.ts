@@ -25,7 +25,10 @@ function collectTsFiles(dir: string): string[] {
     const full = join(dir, entry);
     if (statSync(full).isDirectory()) {
       files.push(...collectTsFiles(full));
-    } else if (entry.endsWith('.ts')) {
+    } else if (entry.endsWith('.ts') && !entry.endsWith('.test.ts')) {
+      // Test files are not shipped in the sim and legitimately call the host
+      // Math library as a reference oracle — sim/math.test.ts compares against
+      // Math.sin on purpose. Only production sim code is scanned.
       files.push(full);
     }
   }
