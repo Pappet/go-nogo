@@ -226,3 +226,40 @@ export function createFlightSimulation(config: FlightConfig): Simulation<FlightS
 
   return { step, apply, canCoast: canCoastNow, coastTo };
 }
+
+// ---------- Derived readouts ----------
+// Instantaneous values the consoles display. They are computed from the state
+// rather than stored in it: a derived number in the state would be one more
+// thing to keep consistent, and one more field in every replay hash.
+
+export function currentMass_kg(state: FlightState, rocket: RocketDef): number {
+  return vehicleMass_kg(rocket, state.stageIndex, state.propellantRemaining_kg);
+}
+
+export function currentThrust_N(state: FlightState, rocket: RocketDef): number {
+  if (!isThrusting(state)) return 0;
+  const environment = environmentAt(positionOf(state), velocityOf(state));
+  return thrustAt(rocket.stages[state.stageIndex], environment.pressure_Pa);
+}
+
+/** What the airframe feels right now, in g. Free fall reads zero. */
+export function currentSensedG(state: FlightState, rocket: RocketDef): number {
+  if (!state.ignited) return 0;
+  const environment = environmentAt(positionOf(state), velocityOf(state));
+  const dragForce =
+    0.5 *
+    environment.density_kgm3 *
+    environment.speed_ms *
+    environment.speed_ms *
+    rocket.dragCoefficient *
+    rocket.referenceArea_m2;
+  return sensedG(currentThrust_N(state, rocket), dragForce, currentMass_kg(state, rocket));
+}
+
+/** Fraction of the active stage's propellant still aboard, 0..1. */
+export function propellantFraction(state: FlightState, rocket: RocketDef): number {
+  const capacity = rocket.stages[state.stageIndex].propellantMass_kg;
+  if (capacity <= 0) return 0;
+  const fraction = state.propellantRemaining_kg / capacity;
+  return fraction < 0 ? 0 : fraction;
+}
