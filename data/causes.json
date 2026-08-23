@@ -1,0 +1,224 @@
+{
+  "_schema_version": "1.1",
+  "_meta": {
+    "description": "Cause Graph v1 (Phase 1 Playtest)",
+    "design_freeze": "v4"
+  },
+  "symptoms": {
+    "sym_pressure_drop": {
+      "title": "Tank pressure dropping steadily (-4 %/min)"
+    },
+    "sym_wobble": {
+      "title": "Steering noisy, wobble detected"
+    },
+    "sym_telemetry_gaps": {
+      "title": "Telemetry downlink patchy"
+    },
+    "sym_voltage_drop": {
+      "title": "Bus voltage dropping rapidly"
+    },
+    "sym_icing": {
+      "title": "Critical temperature warning: Valve freezing"
+    },
+    "sym_flameout": {
+      "title": "Engine thrust plummeting (Flameout)!"
+    }
+  },
+  "causes": {
+    "cause_valve_sluggish": {
+      "title": "Pressure valve sticking/sluggish",
+      "symptoms": [
+        "sym_pressure_drop",
+        "sym_wobble"
+      ],
+      "context_priors": [
+        "cold_profile",
+        "old_serial_no"
+      ],
+      "correct_measures": [
+        "measure_increase_pressure"
+      ],
+      "incorrect_measures": [
+        {
+          "measure": "measure_iso_valve",
+          "side_effect": "chain_flameout"
+        }
+      ],
+      "escalation_s": 55
+    },
+    "cause_prop_leak": {
+      "title": "Propellant leak (Cryo)",
+      "symptoms": [
+        "sym_pressure_drop",
+        "sym_telemetry_gaps",
+        "sym_wobble"
+      ],
+      "context_priors": [
+        "max_q",
+        "high_vibration"
+      ],
+      "correct_measures": [
+        "measure_iso_valve"
+      ],
+      "incorrect_measures": [
+        {
+          "measure": "measure_increase_pressure",
+          "side_effect": "chain_flameout"
+        }
+      ],
+      "escalation_s": 55
+    },
+    "cause_sensor_defective": {
+      "title": "Pressure sensor defective / Measurement error",
+      "symptoms": [
+        "sym_pressure_drop",
+        "sym_voltage_drop"
+      ],
+      "context_priors": [
+        "high_radiation",
+        "cheap_qa"
+      ],
+      "correct_measures": [
+        "measure_sensor_backup"
+      ],
+      "incorrect_measures": [
+        {
+          "measure": "measure_loads_off",
+          "side_effect": "chain_icing"
+        }
+      ],
+      "escalation_s": 45
+    },
+    "cause_bus_short": {
+      "title": "Short circuit in power bus",
+      "symptoms": [
+        "sym_voltage_drop",
+        "sym_telemetry_gaps"
+      ],
+      "context_priors": [
+        "high_radiation",
+        "micrometeorite"
+      ],
+      "correct_measures": [
+        "measure_loads_off"
+      ],
+      "incorrect_measures": [
+        {
+          "measure": "measure_sensor_backup",
+          "side_effect": "chain_flameout"
+        }
+      ],
+      "escalation_s": 60
+    },
+    "chain_icing": {
+      "title": "Cascading failure: Cryo valve freezing",
+      "is_chain": true,
+      "symptoms": [
+        "sym_icing"
+      ],
+      "correct_measures": [
+        "measure_increase_pressure",
+        "measure_abort"
+      ],
+      "incorrect_measures": [
+        {
+          "measure": "measure_iso_valve",
+          "side_effect": "chain_flameout"
+        }
+      ],
+      "escalation_s": 30
+    },
+    "chain_flameout": {
+      "title": "Cascading failure: Catastrophic engine failure",
+      "is_chain": true,
+      "symptoms": [
+        "sym_flameout"
+      ],
+      "correct_measures": [
+        "measure_abort"
+      ],
+      "incorrect_measures": [],
+      "escalation_s": 20
+    }
+  },
+  "measures": {
+    "measure_diag_crosscheck": {
+      "title": "Sensor cross-check",
+      "type": "diagnosis",
+      "duration_s": 10,
+      "occupies": [
+        "channel:any"
+      ],
+      "discriminates": [
+        "cause_sensor_defective"
+      ]
+    },
+    "measure_diag_team_prop": {
+      "title": "Ask Propulsion team",
+      "type": "diagnosis",
+      "duration_s": 45,
+      "occupies": [
+        "engineer:prop"
+      ],
+      "discriminates": [
+        "cause_valve_sluggish"
+      ]
+    },
+    "measure_diag_team_avionics": {
+      "title": "Ask Avionics team",
+      "type": "diagnosis",
+      "duration_s": 45,
+      "occupies": [
+        "engineer:avionics"
+      ],
+      "discriminates": [
+        "cause_bus_short"
+      ]
+    },
+    "measure_increase_pressure": {
+      "title": "Increase tank pressure",
+      "type": "resolution",
+      "duration_s": 5,
+      "occupies": [
+        "channel:any"
+      ]
+    },
+    "measure_loads_off": {
+      "title": "Turn off non-essential loads",
+      "type": "resolution",
+      "duration_s": 8,
+      "occupies": [
+        "channel:any"
+      ]
+    },
+    "measure_sensor_backup": {
+      "title": "Switch to backup sensor",
+      "type": "resolution",
+      "duration_s": 12,
+      "occupies": [
+        "channel:any",
+        "flightcomputer:slot1"
+      ]
+    },
+    "measure_iso_valve": {
+      "title": "Close isolation valve",
+      "type": "resolution",
+      "duration_s": 5,
+      "occupies": [
+        "channel:any",
+        "fuel_line:main"
+      ]
+    },
+    "measure_abort": {
+      "title": "Abort mission (Safe Mode)",
+      "type": "resolution",
+      "duration_s": 3,
+      "occupies": [
+        "channel:any"
+      ]
+    }
+  },
+  "_resources": {
+    "channel:any": 1
+  }
+}
