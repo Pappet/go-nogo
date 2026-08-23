@@ -302,3 +302,25 @@ describe('replayability', () => {
     expect(replay.state.value).toBe(live.state.value);
   });
 });
+
+describe('resuming at a tick', () => {
+  it('continues counting from the tick it was given', () => {
+    // A save is a replayed prefix: the engine has to pick up where the prefix
+    // stopped rather than restarting the count at zero.
+    const engine = new Engine(testSimulation, createState(), 1900);
+    expect(engine.tick).toBe(1900);
+    engine.runTicks(2);
+    expect(engine.tick).toBe(1902);
+    expect(engine.state.steppedTicks).toEqual([1900, 1901]);
+  });
+
+  it('accepts commands stamped after the resume point', () => {
+    const engine = new Engine(testSimulation, createState(), 500);
+    expect(() => engine.inject({ tick: 499, type: 'stale', payload: null })).toThrow(
+      /already past/,
+    );
+    engine.inject({ tick: 505, type: 'ignite', payload: null });
+    engine.runTicks(10);
+    expect(engine.state.applied).toEqual(['ignite@505']);
+  });
+});

@@ -1,0 +1,101 @@
+{
+  "gameVersion": "0.1.0",
+  "dataVersion": "5db6ab8b3569cd18e1d78a160f95ca88f06dd013854677fc5fac8e96b0e2d8bc",
+  "seed": 42,
+  "configuration": {
+    "rocketName": "GN-1 Vanguard"
+  },
+  "commands": [
+    {
+      "tick": 100,
+      "type": "ignite",
+      "payload": null
+    }
+  ],
+  "stateHashes": [
+    {
+      "tick": 0,
+      "sha256": "9ac5b0d92e2882681b6d30b2459eb4ef878af29e01b505610ec817790bfc3596"
+    },
+    {
+      "tick": 600,
+      "sha256": "e9e241667eb88bcbab3848c4a2620638c82fb6e5018c2f23476b2d6408eb72fb"
+    },
+    {
+      "tick": 1200,
+      "sha256": "4c523c08c93321c172a777fb30099a6b11389ef915fa9476a7d5da709ba1cca5"
+    },
+    {
+      "tick": 1800,
+      "sha256": "58c93a102f0d4465676ffbbf6fc266bffa1ee54b5475bdea5c9153edd4341254"
+    },
+    {
+      "tick": 2400,
+      "sha256": "22fec148dd873975952af392d7f058247ae15ef1662c37f6c12b944276b049e2"
+    },
+    {
+      "tick": 3000,
+      "sha256": "f5e96edaeaebc223cf695dcba95c1f68a6cc37a6f9bb58a47dd5d6dec70da912"
+    },
+    {
+      "tick": 3600,
+      "sha256": "84ed0903a9f98e4207018babff93204e0b56a9d07505b93f287d98493e1c02f7"
+    },
+    {
+      "tick": 4200,
+      "sha256": "5a7f3c5b1de5a2e4fac393ba64fa2d52f6da040ad0fd75335c0f1f2ab48d0835"
+    },
+    {
+      "tick": 4800,
+      "sha256": "1c86b6fdc2941e151a64bc92d17f545f1e38cb73b5602ef0027cf74dd7843bac"
+    },
+    {
+      "tick": 5400,
+      "sha256": "0029f22a7eb009f8d7395e4354f28bd6365df9c006b1a92c824f75263cabbc79"
+    },
+    {
+      "tick": 6000,
+      "sha256": "94cbd89a22a84f0af62fa7639ee3ab824d5e7378ac35a4ae7bccbb9a15385142"
+    },
+    {
+      "tick": 6600,
+      "sha256": "356d323ab1b7ff3bfe51c01fdf365016236f0089280c68ed183b211eb536bb6f"
+    },
+    {
+      "tick": 7200,
+      "sha256": "9d3dbf38a416ecb35ee3482402c14823ceb300e74d772d784a3e37028a8c5e77"
+    },
+    {
+      "tick": 7800,
+      "sha256": "c26fe9a0fe97664e73466a22fee7b4cd776dba2e31b20a8ce195c068a6a71305"
+    },
+    {
+      "tick": 8400,
+      "sha256": "051a91340d83c8dc087d3e4908dccdf7f192c3a637062151f8fd18935e59fa1a"
+    },
+    {
+      "tick": 9000,
+      "sha256": "0dd5c483a7d4f8e16e9b24ea52f0996d02b0f8f7c12cc4ed12acae0d29070f98"
+    },
+    {
+      "tick": 9600,
+      "sha256": "bfbe2609dbe19f04830c4ec546c5e31711895eec75c11a52fd0a2f4e6579d184"
+    },
+    {
+      "tick": 10200,
+      "sha256": "68fbbf11db4530faa11264c8f86cbe1fa2181d500b3fd1b798866298d5c0edc5"
+    },
+    {
+      "tick": 10800,
+      "sha256": "a0404d3323b65223efcdd6d8972f7b981d4e8e02f5ae01ba2d636865194d70f0"
+    },
+    {
+      "tick": 11400,
+      "sha256": "e2e3eab2997cd25e9e80721d7d26a2c037035087859cc13aa824890078a87b83"
+    },
+    {
+      "tick": 12000,
+      "sha256": "d066a1a76b9df16f7a6e00c13f08519a2a410f71eca2251c27b7a5ba38b38a41"
+    }
+  ]
+}

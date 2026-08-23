@@ -60,16 +60,22 @@ export class Engine<S> {
   private readonly simulation: Simulation<S>;
   private readonly queue: Command[] = [];
 
-  private currentTick = 0;
+  private currentTick: number;
   private paused = false;
   private warp = 1;
 
   /** Real milliseconds not yet converted into ticks. Never a sim input. */
   private accumulatorMs = 0;
 
-  constructor(simulation: Simulation<S>, state: S) {
+  /**
+   * `startTick` resumes an engine at a state that has already run: a save is a
+   * replayed prefix, and the tick counter has to pick up where that prefix
+   * left off rather than restarting at zero.
+   */
+  constructor(simulation: Simulation<S>, state: S, startTick = 0) {
     this.simulation = simulation;
     this.state = state;
+    this.currentTick = startTick;
   }
 
   get tick(): number {

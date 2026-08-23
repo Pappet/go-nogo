@@ -1,0 +1,115 @@
+import { describe, expect, it } from 'vitest';
+
+import { createFlightState } from '../sim/flight.js';
+
+import { CanonicalWriter, encodeFlightState, hashFlightState } from './hash.js';
+
+describe('canonical writer', () => {
+  it('writes floats little-endian, eight bytes each', () => {
+    const writer = new CanonicalWriter();
+    writer.float64(1, 'a');
+    const bytes = writer.toBytes();
+    expect(bytes).toHaveLength(8);
+    // 1.0 as IEEE-754 LE ends with 0x3f 0xf0.
+    expect(bytes[7]).toBe(0x3f);
+    expect(bytes[6]).toBe(0xf0);
+  });
+
+  it('refuses NaN and Infinity, naming the field', () => {
+    // A NaN in the state means the simulation is already broken; hashing it
+    // would preserve the wreckage instead of reporting it (concept §8.2 rule 8).
+    expect(() => new CanonicalWriter().float64(NaN, 'velocityX')).toThrow(/NaN.*velocityX/);
+    expect(() => new CanonicalWriter().float64(Infinity, 'altitude')).toThrow(
+      /Infinity.*altitude/,
+    );
+    expect(() => new CanonicalWriter().float64(-Infinity, 'altitude')).toThrow(/altitude/);
+  });
+
+  it('refuses a non-integer where an integer belongs', () => {
+    expect(() => new CanonicalWriter().int32(1.5, 'tick')).toThrow(/non-integer.*tick/);
+  });
+
+  it('normalises signed zero', () => {
+    // Physics produces -0 legitimately (a negative factor times +0). Without
+    // this, an incidental sign would change a replay hash.
+    const positive = new CanonicalWriter();
+    positive.float64(0, 'a');
+    const negative = new CanonicalWriter();
+    negative.float64(-0, 'a');
+    expect(Array.from(negative.toBytes())).toEqual(Array.from(positive.toBytes()));
+  });
+
+  it('distinguishes values that JSON would render identically', () => {
+    const a = new CanonicalWriter();
+    a.float64(0.1 + 0.2, 'x');
+    const b = new CanonicalWriter();
+    b.float64(0.3, 'x');
+    // 0.1 + 0.2 !== 0.3 in binary, and the bytes must say so.
+    expect(Array.from(a.toBytes())).not.toEqual(Array.from(b.toBytes()));
+  });
+
+  it('makes field order part of the encoding', () => {
+    const forward = new CanonicalWriter();
+    forward.float64(1, 'a');
+    forward.float64(2, 'b');
+    const reversed = new CanonicalWriter();
+    reversed.float64(2, 'b');
+    reversed.float64(1, 'a');
+    expect(Array.from(forward.toBytes())).not.toEqual(Array.from(reversed.toBytes()));
+  });
+
+  it('length-prefixes strings so neighbours cannot merge', () => {
+    const split = new CanonicalWriter();
+    split.string('ab');
+    split.string('c');
+    const merged = new CanonicalWriter();
+    merged.string('abc');
+    merged.string('');
+    expect(Array.from(split.toBytes())).not.toEqual(Array.from(merged.toBytes()));
+  });
+});
+
+describe('flight state hashing', () => {
+  it('is stable for an unchanged state', () => {
+    const state = createFlightState();
+    expect(hashFlightState(state)).toBe(hashFlightState(createFlightState()));
+  });
+
+  it('changes when any field changes', () => {
+    const baseline = hashFlightState(createFlightState());
+    const fields = [
+      (s: ReturnType<typeof createFlightState>) => (s.tick = 1),
+      (s: ReturnType<typeof createFlightState>) => (s.liftoffTick = 1),
+      (s: ReturnType<typeof createFlightState>) => (s.positionX += 1),
+      (s: ReturnType<typeof createFlightState>) => (s.positionY += 1),
+      (s: ReturnType<typeof createFlightState>) => (s.velocityX += 1),
+      (s: ReturnType<typeof createFlightState>) => (s.velocityY += 1),
+      (s: ReturnType<typeof createFlightState>) => (s.stageIndex = 1),
+      (s: ReturnType<typeof createFlightState>) => (s.propellantRemaining_kg = 1),
+      (s: ReturnType<typeof createFlightState>) => (s.ignited = true),
+      (s: ReturnType<typeof createFlightState>) => (s.separated = true),
+      (s: ReturnType<typeof createFlightState>) => (s.cutoff = true),
+      (s: ReturnType<typeof createFlightState>) => (s.maxDynamicPressure_Pa = 1),
+      (s: ReturnType<typeof createFlightState>) => (s.maxSensedG = 1),
+    ];
+    for (const mutate of fields) {
+      const state = createFlightState();
+      mutate(state);
+      expect(hashFlightState(state)).not.toBe(baseline);
+    }
+  });
+
+  it('notices a difference far below display precision', () => {
+    // A metre of position is invisible on a gauge and fatal to a replay.
+    const state = createFlightState();
+    state.positionX += 1;
+    expect(hashFlightState(state)).not.toBe(hashFlightState(createFlightState()));
+  });
+
+  it('encodes the whole schema, not a prefix of it', () => {
+    const writer = new CanonicalWriter();
+    encodeFlightState(createFlightState(), writer);
+    // 3 int32 (tick, liftoffTick, stageIndex) + 7 float64 + 3 booleans.
+    expect(writer.toBytes()).toHaveLength(3 * 4 + 7 * 8 + 3);
+  });
+});
