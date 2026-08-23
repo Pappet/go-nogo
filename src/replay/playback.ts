@@ -5,17 +5,22 @@
  * runs as fast as the machine allows and lands on exactly the same states as
  * the live session that produced it.
  */
+import {
+  type MissionConfigInput,
+  type MissionState,
+  createMissionSimulation,
+  createMissionState,
+} from '../sim/countdown.js';
 import { Engine } from '../sim/engine.js';
-import { type FlightConfig, type FlightState, createFlightSimulation, createFlightState } from '../sim/flight.js';
 
-import { hashFlightState } from './hash.js';
+import { hashMissionState } from './hash.js';
 import { type Run, type StateHash, computeDataVersion, lastCommandTick } from './run.js';
 
 /** Concept §8.2 rule 8: a hash every 600 ticks localises a desync to 30 s. */
 export const HASH_INTERVAL_TICKS = 600;
 
 export interface PlaybackResult {
-  readonly state: FlightState;
+  readonly state: MissionState;
   readonly hashes: readonly StateHash[];
   readonly finalHash: string;
   readonly finalTick: number;
@@ -29,24 +34,24 @@ export interface PlaybackResult {
  * starting over.
  */
 export function play(
-  config: FlightConfig,
+  config: MissionConfigInput,
   commands: readonly { tick: number; type: string; payload: unknown }[],
   untilTick: number,
-  startState?: FlightState,
+  startState?: MissionState,
 ): PlaybackResult {
-  const state = startState ?? createFlightState();
+  const state = startState ?? createMissionState(config.checklist);
   // A resumed state already carries the tick it is valid at; the engine has to
   // continue from there instead of counting from zero again.
-  const engine = new Engine(createFlightSimulation(config), state, state.tick);
+  const engine = new Engine(createMissionSimulation(config), state, state.flight.tick);
 
   for (const command of commands) {
-    if (command.tick >= state.tick) engine.inject(command);
+    if (command.tick >= state.flight.tick) engine.inject(command);
   }
 
   const hashes: StateHash[] = [];
   const sample = (): void => {
     if (engine.tick % HASH_INTERVAL_TICKS === 0) {
-      hashes.push({ tick: engine.tick, sha256: hashFlightState(state) });
+      hashes.push({ tick: engine.tick, sha256: hashMissionState(state) });
     }
   };
 
@@ -68,13 +73,13 @@ export function play(
   return {
     state,
     hashes,
-    finalHash: hashFlightState(state),
+    finalHash: hashMissionState(state),
     finalTick: engine.tick,
   };
 }
 
 /** Plays a stored run from tick 0. */
-export function playRun(run: Run, config: FlightConfig, untilTick?: number): PlaybackResult {
+export function playRun(run: Run, config: MissionConfigInput, untilTick?: number): PlaybackResult {
   const target = untilTick ?? runLength(run);
   return play(config, run.commands, target);
 }
@@ -102,8 +107,12 @@ export interface VerificationResult {
  * desync is localised to one 30-second window instead of "somewhere in the
  * flight" (concept §8.2 rule 8).
  */
-export function verifyRun(run: Run, config: FlightConfig): VerificationResult {
-  const expectedDataVersion = computeDataVersion(config.rocket, config.pitchProgram);
+export function verifyRun(run: Run, config: MissionConfigInput): VerificationResult {
+  const expectedDataVersion = computeDataVersion(
+    config.rocket,
+    config.pitchProgram,
+    config.checklist,
+  );
   if (run.dataVersion !== expectedDataVersion) {
     return { ok: false, firstMismatchTick: 0, checked: 0 };
   }

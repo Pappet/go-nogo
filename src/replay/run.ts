@@ -7,6 +7,7 @@
  * run truncated at a tick (rule 9) rather than a system of its own.
  */
 import type { Command } from '../sim/engine.js';
+import type { ChecklistDef } from '../sim/countdown.js';
 import type { PitchProgram } from '../sim/physics/ascentProgram.js';
 import type { RocketDef } from '../sim/physics/thrust.js';
 
@@ -44,7 +45,11 @@ export interface Run {
  * The fields are walked explicitly rather than via `JSON.stringify`, for the
  * same reason the state hash is.
  */
-export function computeDataVersion(rocket: RocketDef, pitchProgram: PitchProgram): string {
+export function computeDataVersion(
+  rocket: RocketDef,
+  pitchProgram: PitchProgram,
+  checklist: ChecklistDef,
+): string {
   const writer = new CanonicalWriter();
 
   writer.string(rocket.name);
@@ -52,6 +57,7 @@ export function computeDataVersion(rocket: RocketDef, pitchProgram: PitchProgram
   writer.float64(rocket.referenceArea_m2, 'referenceArea_m2');
   writer.float64(rocket.dragCoefficient, 'dragCoefficient');
   writer.float64(rocket.maxDynamicPressure_Pa, 'maxDynamicPressure_Pa');
+  writer.float64(rocket.stageSeparationDelay_s, 'stageSeparationDelay_s');
   writer.float64(rocket.targetOrbit.periapsisAltitude_m, 'targetOrbit.periapsisAltitude_m');
   writer.float64(rocket.targetOrbit.apoapsisAltitude_m, 'targetOrbit.apoapsisAltitude_m');
 
@@ -71,6 +77,11 @@ export function computeDataVersion(rocket: RocketDef, pitchProgram: PitchProgram
     writer.float64(node.time_s, 'time_s');
     writer.float64(node.pitch_deg, 'pitch_deg');
   }
+
+  // The checklist is data too: its length gates arming and its countdown sets
+  // the terminal count, so both change how a run unfolds.
+  writer.int32(checklist.items.length, 'checklist.items.length');
+  writer.float64(checklist.countdownSeconds, 'countdownSeconds');
 
   return sha256(writer.toBytes());
 }

@@ -44,6 +44,8 @@ export interface FlightState {
   propellantRemaining_kg: number;
 
   ignited: boolean;
+  /** Tick main engine cutoff happened, or -1. Separation follows it by a coast. */
+  mecoTick: number;
   separated: boolean;
   /** True once guidance has shut the upper stage down on reaching the target. */
   cutoff: boolean;
@@ -68,6 +70,7 @@ export function createFlightState(): FlightState {
     stageIndex: 0,
     propellantRemaining_kg: 0,
     ignited: false,
+    mecoTick: -1,
     separated: false,
     cutoff: false,
     maxDynamicPressure_Pa: 0,
@@ -107,6 +110,7 @@ export function canCoastNow(state: FlightState): boolean {
 export function createFlightSimulation(config: FlightConfig): Simulation<FlightState> {
   const { rocket, pitchProgram } = config;
   const targetPeriapsis_m = EARTH_RADIUS_M + rocket.targetOrbit.periapsisAltitude_m;
+  const separationDelayTicks = Math.round(rocket.stageSeparationDelay_s / DT_S);
 
   function step(state: FlightState, tick: number): void {
     state.tick = tick + 1;
@@ -161,11 +165,21 @@ export function createFlightSimulation(config: FlightConfig): Simulation<FlightS
     state.velocityX = next.velocity.x;
     state.velocityY = next.velocity.y;
 
-    // Staging: a depleted lower stage is dropped and the next one lights.
+    // Main engine cutoff. Separation is not instantaneous: the stack coasts
+    // for a moment so the stages drift apart before the next one lights, which
+    // is also what makes MECO and SEP two distinguishable events.
     if (
+      state.mecoTick < 0 &&
       state.propellantRemaining_kg === 0 &&
-      state.stageIndex < rocket.stages.length - 1 &&
-      !state.cutoff
+      state.stageIndex < rocket.stages.length - 1
+    ) {
+      state.mecoTick = tick;
+    }
+
+    if (
+      state.mecoTick >= 0 &&
+      !state.separated &&
+      tick - state.mecoTick >= separationDelayTicks
     ) {
       state.stageIndex += 1;
       state.propellantRemaining_kg = rocket.stages[state.stageIndex].propellantMass_kg;

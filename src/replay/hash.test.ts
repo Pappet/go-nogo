@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
+import checklistData from '../data/checklist.json' with { type: 'json' };
+import { type ChecklistDef, createMissionState } from '../sim/countdown.js';
 import { createFlightState } from '../sim/flight.js';
 
-import { CanonicalWriter, encodeFlightState, hashFlightState } from './hash.js';
+import { CanonicalWriter, encodeFlightState, hashFlightState, hashMissionState } from './hash.js';
 
 describe('canonical writer', () => {
   it('writes floats little-endian, eight bytes each', () => {
@@ -109,7 +111,44 @@ describe('flight state hashing', () => {
   it('encodes the whole schema, not a prefix of it', () => {
     const writer = new CanonicalWriter();
     encodeFlightState(createFlightState(), writer);
-    // 3 int32 (tick, liftoffTick, stageIndex) + 7 float64 + 3 booleans.
-    expect(writer.toBytes()).toHaveLength(3 * 4 + 7 * 8 + 3);
+    // 4 int32 (tick, liftoffTick, stageIndex, mecoTick) + 7 float64 + 3 booleans.
+    expect(writer.toBytes()).toHaveLength(4 * 4 + 7 * 8 + 3);
+  });
+});
+
+describe('mission state hashing', () => {
+  const checklist = checklistData as ChecklistDef;
+
+  it('covers the countdown machine as well as the flight', () => {
+    const baseline = hashMissionState(createMissionState(checklist));
+
+    const armed = createMissionState(checklist);
+    armed.phase = 'ARMED';
+    expect(hashMissionState(armed)).not.toBe(baseline);
+
+    const switched = createMissionState(checklist);
+    switched.checklist[0] = true;
+    expect(hashMissionState(switched)).not.toBe(baseline);
+
+    const counting = createMissionState(checklist);
+    counting.ignitionTick = 320;
+    expect(hashMissionState(counting)).not.toBe(baseline);
+  });
+
+  it('notices an event appearing or going missing', () => {
+    const baseline = hashMissionState(createMissionState(checklist));
+    const withEvent = createMissionState(checklist);
+    withEvent.events.push({ tick: 1, missionTime_s: 0, type: 'CHECKLIST', message: 'x' });
+    expect(hashMissionState(withEvent)).not.toBe(baseline);
+  });
+
+  it('ignores the wording of an event message', () => {
+    // Log text is presentation. Rewording a line must not invalidate every
+    // stored replay, but the event still has to exist.
+    const first = createMissionState(checklist);
+    first.events.push({ tick: 1, missionTime_s: 0, type: 'MECO', message: 'MECO — cutoff' });
+    const second = createMissionState(checklist);
+    second.events.push({ tick: 1, missionTime_s: 0, type: 'MECO', message: 'main engine off' });
+    expect(hashMissionState(second)).toBe(hashMissionState(first));
   });
 });

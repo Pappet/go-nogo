@@ -10,6 +10,7 @@
  * means the simulation has already gone wrong, and hashing it would preserve
  * the wreckage instead of reporting it.
  */
+import { type MissionState, phaseIndex } from '../sim/countdown.js';
 import type { FlightState } from '../sim/flight.js';
 
 import { sha256 } from './sha256.js';
@@ -78,15 +79,40 @@ export function encodeFlightState(state: FlightState, writer: CanonicalWriter): 
   writer.int32(state.stageIndex, 'stageIndex');
   writer.float64(state.propellantRemaining_kg, 'propellantRemaining_kg');
   writer.boolean(state.ignited);
+  writer.int32(state.mecoTick, 'mecoTick');
   writer.boolean(state.separated);
   writer.boolean(state.cutoff);
   writer.float64(state.maxDynamicPressure_Pa, 'maxDynamicPressure_Pa');
   writer.float64(state.maxSensedG, 'maxSensedG');
 }
 
+/**
+ * Writes the mission state: the countdown machine, then the flight beneath it.
+ *
+ * Event *messages* are deliberately not hashed — they are presentation, and a
+ * reworded log line must not invalidate every stored replay. The number of
+ * events is hashed, so an event appearing or going missing still shows up.
+ */
+export function encodeMissionState(state: MissionState, writer: CanonicalWriter): void {
+  writer.int32(phaseIndex(state.phase), 'phase');
+  writer.int32(state.checklist.length, 'checklist.length');
+  for (const item of state.checklist) writer.boolean(item);
+  writer.int32(state.ignitionTick, 'ignitionTick');
+  writer.int32(state.events.length, 'events.length');
+  writer.float64(state.previousDynamicPressure_Pa, 'previousDynamicPressure_Pa');
+  encodeFlightState(state.flight, writer);
+}
+
 /** SHA-256 over the canonical encoding of a flight state. */
 export function hashFlightState(state: FlightState): string {
   const writer = new CanonicalWriter();
   encodeFlightState(state, writer);
+  return sha256(writer.toBytes());
+}
+
+/** SHA-256 over the canonical encoding of a whole mission state. */
+export function hashMissionState(state: MissionState): string {
+  const writer = new CanonicalWriter();
+  encodeMissionState(state, writer);
   return sha256(writer.toBytes());
 }

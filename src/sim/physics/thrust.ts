@@ -31,6 +31,8 @@ export interface RocketDef {
   readonly referenceArea_m2: number;
   readonly dragCoefficient: number;
   readonly maxDynamicPressure_Pa: number;
+  /** Coast between main engine cutoff and separation, in seconds. */
+  readonly stageSeparationDelay_s: number;
   readonly stages: readonly StageDef[];
   readonly targetOrbit: TargetOrbit;
 }

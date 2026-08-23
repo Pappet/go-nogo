@@ -15,10 +15,11 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
+import checklistData from '../data/checklist.json' with { type: 'json' };
 import pitchData from '../data/pitchProgram.json' with { type: 'json' };
 import rocketData from '../data/rocket.json' with { type: 'json' };
+import { type ChecklistDef, createMissionState } from '../sim/countdown.js';
 import type { Command } from '../sim/engine.js';
-import { createFlightState } from '../sim/flight.js';
 import type { PitchProgram } from '../sim/physics/ascentProgram.js';
 import type { RocketDef } from '../sim/physics/thrust.js';
 
@@ -35,13 +36,29 @@ import {
 const config = {
   rocket: rocketData as RocketDef,
   pitchProgram: pitchData as PitchProgram,
+  checklist: checklistData as ChecklistDef,
 };
 
-/** Seed 42 and a fixed command log, exactly as CLAUDE.md specifies. */
+/**
+ * Seed 42 and a fixed command log, exactly as CLAUDE.md specifies.
+ *
+ * The log is a real launch: five checklist switches thrown one after another,
+ * then arm. Everything after that — the terminal count, ignition, staging,
+ * cutoff — falls out of the simulation without another input.
+ */
 const SEED = 42;
-const IGNITION_TICK = 100;
+const ARM_TICK = 120;
+/** Terminal count is 10 s = 200 ticks, so the engines light here. */
+const IGNITION_TICK = ARM_TICK + 200;
 const RUN_LENGTH_TICKS = 12000; // 10 minutes: ascent, cutoff and a long coast.
-const COMMANDS: Command[] = [{ tick: IGNITION_TICK, type: 'ignite', payload: null }];
+const COMMANDS: Command[] = [
+  { tick: 20, type: 'toggleChecklist', payload: { index: 0 } },
+  { tick: 40, type: 'toggleChecklist', payload: { index: 1 } },
+  { tick: 60, type: 'toggleChecklist', payload: { index: 2 } },
+  { tick: 80, type: 'toggleChecklist', payload: { index: 3 } },
+  { tick: 100, type: 'toggleChecklist', payload: { index: 4 } },
+  { tick: ARM_TICK, type: 'arm', payload: null },
+];
 
 const FIXTURE_PATH = join(import.meta.dirname, 'fixtures', 'seed42.json');
 
@@ -49,7 +66,7 @@ function recordRun(): Run {
   const result = play(config, COMMANDS, RUN_LENGTH_TICKS);
   return {
     gameVersion: GAME_VERSION,
-    dataVersion: computeDataVersion(config.rocket, config.pitchProgram),
+    dataVersion: computeDataVersion(config.rocket, config.pitchProgram, config.checklist),
     seed: SEED,
     configuration: { rocketName: config.rocket.name },
     commands: COMMANDS,
@@ -71,7 +88,9 @@ describe('replay fixture (seed 42)', () => {
   it('was flown against the current data files', () => {
     // A change to rocket.json or pitchProgram.json invalidates the run before
     // a single tick is simulated (concept §8.2 rule 7).
-    expect(fixture.dataVersion).toBe(computeDataVersion(config.rocket, config.pitchProgram));
+    expect(fixture.dataVersion).toBe(
+      computeDataVersion(config.rocket, config.pitchProgram, config.checklist),
+    );
     expect(fixture.gameVersion).toBe(GAME_VERSION);
   });
 
@@ -90,9 +109,10 @@ describe('replay fixture (seed 42)', () => {
 
   it('reaches orbit — the run is a real flight, not an empty one', () => {
     const result = playRun(fixture, config, RUN_LENGTH_TICKS);
-    expect(result.state.ignited).toBe(true);
-    expect(result.state.separated).toBe(true);
-    expect(result.state.cutoff).toBe(true);
+    expect(result.state.flight.ignited).toBe(true);
+    expect(result.state.flight.separated).toBe(true);
+    expect(result.state.flight.cutoff).toBe(true);
+    expect(result.state.phase).toBe('ORBIT_CHECK');
   });
 
   it('detects a tampered hash and localises it to its 30-second window', () => {
@@ -139,18 +159,18 @@ describe('save and resume', () => {
     // A save during coast would be the easy case; this one has to reproduce a
     // burning stage with a partially drained tank.
     const atSave = play(config, COMMANDS, SAVE_TICK);
-    expect(atSave.state.ignited).toBe(true);
-    expect(atSave.state.cutoff).toBe(false);
-    expect(atSave.state.propellantRemaining_kg).toBeGreaterThan(0);
-    expect(atSave.state.propellantRemaining_kg).toBeLessThan(
+    expect(atSave.state.flight.ignited).toBe(true);
+    expect(atSave.state.flight.cutoff).toBe(false);
+    expect(atSave.state.flight.propellantRemaining_kg).toBeGreaterThan(0);
+    expect(atSave.state.flight.propellantRemaining_kg).toBeLessThan(
       config.rocket.stages[0].propellantMass_kg,
     );
   });
 
   it('keeps only the commands up to the save point', () => {
     const full = recordRun();
-    const saved = sliceRun(full, IGNITION_TICK - 1);
-    expect(saved.commands).toHaveLength(0);
+    const saved = sliceRun(full, 50);
+    expect(saved.commands).toHaveLength(2);
     const late = sliceRun(full, RUN_LENGTH_TICKS);
     expect(late.commands).toHaveLength(COMMANDS.length);
   });
@@ -178,8 +198,8 @@ describe('double playback', () => {
 
   it('is unaffected by a fresh state object', () => {
     // Guards against state leaking through module scope between runs.
-    const first = play(config, COMMANDS, 3000, createFlightState());
-    const second = play(config, COMMANDS, 3000, createFlightState());
+    const first = play(config, COMMANDS, 3000, createMissionState(config.checklist));
+    const second = play(config, COMMANDS, 3000, createMissionState(config.checklist));
     expect(second.finalHash).toBe(first.finalHash);
   });
 });

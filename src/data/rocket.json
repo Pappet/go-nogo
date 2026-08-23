@@ -5,6 +5,7 @@
   "referenceArea_m2": 4.5,
   "dragCoefficient": 0.32,
   "maxDynamicPressure_Pa": 40000,
+  "stageSeparationDelay_s": 3.5,
   "stages": [
     {
       "name": "Stage 1",
