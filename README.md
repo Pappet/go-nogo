@@ -1,10 +1,10 @@
 # GO/NOGO
 
-Missionskontroll-Spiel (Web, TypeScript) — „Reverse Kerbal": Du bist Flight Director und Startup-CEO in einer Person.
+Mission control game (web, TypeScript) — "reverse Kerbal": you are flight director and startup CEO in one person.
 
-> **Wiederspielwert entsteht aus Entscheidungsraum, nicht aus Würfeln.**
+> **Replay value comes from decision space, not from dice.**
 
-Design-Freeze-Spezifikation: [`docs/KONZEPT_v4.md`](docs/KONZEPT_v4.md)
-Projektregeln für Claude Code: [`CLAUDE.md`](CLAUDE.md)
+Design-freeze specification: [`docs/CONCEPT_v4.md`](docs/CONCEPT_v4.md)
+Project rules for Claude Code: [`CLAUDE.md`](CLAUDE.md)
 
-**Aktueller Stand:** Phase 0 – „Der Countdown".
+**Current status:** Phase 0 – "The Countdown".
