@@ -1,8 +1,8 @@
 <script lang="ts">
-  import LaunchConsole from './ui/consoles/launch/LaunchConsole.svelte';
+  import ConsoleShell from './ui/consoles/ConsoleShell.svelte';
 </script>
 
-<LaunchConsole />
+<ConsoleShell />
 
 <style>
   :global(body) {

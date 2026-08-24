@@ -290,10 +290,35 @@ describe('parallel work under scarcity', () => {
 });
 
 describe('auto-pause', () => {
-  it('asks to stop once when an anomaly appears', () => {
-    const { state, anomaly, key } = runtimeWith('cause_prop_leak');
-    expect(step(state, key, anomaly.onsetTick).autoPause).toBe(true);
-    expect(step(state, key, anomaly.onsetTick + 1).autoPause).toBe(false);
+  it('asks to stop when the first symptom becomes visible, not at onset', () => {
+    // Pausing at onset would hand the player an empty panel: no symptom, no
+    // candidates, nothing to decide.
+    const { state, anomaly, key } = runtimeWith('cause_prop_leak', {
+      sym_pressure_drop: 6,
+      sym_telemetry_gaps: 40,
+      sym_wobble: 40,
+    });
+    expect(step(state, key, anomaly.onsetTick).autoPause).toBe(false);
+
+    let paused: number | null = null;
+    for (let tick = anomaly.onsetTick + 1; tick <= seconds(8); tick++) {
+      if (step(state, key, tick).autoPause) paused = tick;
+    }
+    expect(paused).toBe(seconds(6));
+  });
+
+  it('has something to show by the time it stops the clock', () => {
+    const { state, anomaly, key } = runtimeWith('cause_prop_leak', {
+      sym_pressure_drop: 3,
+      sym_telemetry_gaps: 40,
+      sym_wobble: 40,
+    });
+    for (let tick = anomaly.onsetTick; tick <= seconds(3); tick++) {
+      if (step(state, key, tick).autoPause) {
+        expect(observedSymptoms(state, anomaly.id, tick).length).toBeGreaterThan(0);
+        expect(candidatesFor(state, graph, anomaly.id, tick).length).toBeGreaterThan(0);
+      }
+    }
   });
 
   it('asks again for a chain the player caused', () => {

@@ -7,7 +7,21 @@
  * UI never writes simulation state — player actions become tick-stamped
  * commands, and the console reads a snapshot taken after the ticks have run.
  */
+import { dismissOffer } from '../sim/pauseModel.js';
 import { createMissionConfig, checklist, rocket, pitchProgram } from '../missionConfig.js';
+import {
+  candidateBars,
+  candidatesFor,
+  observedSymptoms,
+  openAnomalies,
+} from '../sim/diagnosis/diagnosis.js';
+import type { CandidatePrior } from '../sim/diagnosis/priors.js';
+import {
+  type ProjectedMeasure,
+  projectSchedule,
+} from '../sim/diagnosis/measures.js';
+import { ticksToEscalation } from '../sim/systems/anomaly.js';
+import type { ConsoleSlot } from './hotkeys.js';
 import {
   type CountdownPhase,
   type MissionEvent,
@@ -17,7 +31,7 @@ import {
   createMissionSimulation,
   createMissionState,
 } from '../sim/countdown.js';
-import { type Command, Engine, MAX_NUMERIC_WARP } from '../sim/engine.js';
+import { type Command, Engine, MAX_NUMERIC_WARP, TICKS_PER_SECOND } from '../sim/engine.js';
 import {
   currentSensedG,
   isThrusting,
@@ -55,6 +69,32 @@ export interface OrbitReadout {
   readonly elements: OrbitalElements;
 }
 
+/** One anomaly as the ENGINEERING console needs to draw it. */
+export interface AnomalyView {
+  readonly id: string;
+  readonly symptoms: { readonly title: string; readonly strength: number }[];
+  readonly candidates: CandidatePrior[];
+  readonly candidateTitles: Record<string, string>;
+  /** Seconds until the escalation window closes. Negative once it has. */
+  readonly secondsToEscalation: number;
+  readonly escalationWindow_s: number;
+}
+
+export interface MeasureView {
+  readonly id: string;
+  readonly title: string;
+  readonly duration_s: number;
+  readonly occupies: readonly string[];
+  readonly kind: 'diagnosis' | 'resolution';
+  /** True while this measure would tell the player nothing new. */
+  readonly redundant: boolean;
+}
+
+export interface ChannelView {
+  readonly capacity: number;
+  readonly inUse: number;
+}
+
 export interface Telemetry {
   phase: CountdownPhase;
   clock_s: number;
@@ -74,6 +114,13 @@ export interface Telemetry {
   orbit: OrbitReadout | null;
   position: { x: number; y: number };
   trail: { x: number; y: number }[];
+
+  console: ConsoleSlot;
+  anomalies: AnomalyView[];
+  measures: MeasureView[];
+  timeline: ProjectedMeasure[];
+  channels: ChannelView;
+  resultOffer: { anomalyId: string; measureTitle: string } | null;
 }
 
 export const checklistItems = checklist.items;
@@ -140,6 +187,40 @@ export class Mission {
     unlockAudio();
     if (this.engine.isPaused) this.engine.resume();
     else this.engine.pause();
+    this.telemetry = this.snapshot();
+  }
+
+  /** The console the player is looking at. Presentation, not simulation. */
+  private console: ConsoleSlot = 'launch';
+
+  /** Only consoles that exist in this phase can be switched to. */
+  switchConsole(slot: ConsoleSlot): boolean {
+    if (slot !== 'launch' && slot !== 'engineering') return false;
+    this.console = slot;
+    this.telemetry = this.snapshot();
+    return true;
+  }
+
+  /** Queues a measure against an anomaly — a tick-stamped command like any other. */
+  queueMeasure(measureId: string, anomalyId: string): void {
+    unlockAudio();
+    this.commands.push(this.engine.submit('queueMeasure', { measureId, anomalyId }));
+    playSwitchClick();
+  }
+
+  /** The tick the console is drawing. */
+  get currentTick(): number {
+    return this.engine.tick;
+  }
+
+  /** The anomaly the panel acts on, or null when nothing is open. */
+  get focusedAnomaly(): string | null {
+    return this.focusedAnomalyId(this.state, this.engine.tick);
+  }
+
+  acceptResultOffer(): void {
+    this.engine.pause();
+    dismissOffer(this.state.diagnosis.pause);
     this.telemetry = this.snapshot();
   }
 
@@ -247,6 +328,7 @@ export class Mission {
 
   private snapshot(): Telemetry {
     const state = this.state;
+    const tick = this.engine.tick;
     const flight = state.flight;
     const position = positionOf(flight);
     const velocity = velocityOf(flight);
@@ -271,7 +353,147 @@ export class Mission {
       orbit: readOrbit(flight.positionX, flight.positionY, flight.velocityX, flight.velocityY),
       position: { x: flight.positionX, y: flight.positionY },
       trail: [...this.trailSampler.trail],
+
+      console: this.console,
+      anomalies: this.anomalyViews(state, tick),
+      measures: this.measureViews(state, tick),
+      timeline: this.projectQueued(state, tick),
+      channels: this.channelView(state),
+      resultOffer:
+        state.diagnosis.pause.offer === null
+          ? null
+          : {
+              anomalyId: state.diagnosis.pause.offer.anomalyId,
+              measureTitle: config.causeGraph.measure(state.diagnosis.pause.offer.measureId).title,
+            },
     };
+  }
+
+  /** One view per anomaly the player can still act on. */
+  private anomalyViews(state: MissionState, tick: number): AnomalyView[] {
+    return openAnomalies(state.diagnosis, tick).map((anomalyId) => {
+      const anomaly = state.diagnosis.anomalies.anomalies.find((entry) => entry.id === anomalyId)!;
+      const candidates = candidateBars(
+        state.diagnosis,
+        config.causeGraph,
+        config.priorSettings,
+        anomalyId,
+        state.phase,
+        tick,
+      );
+      const titles: Record<string, string> = {};
+      for (const candidate of candidates) {
+        titles[candidate.causeId] = config.causeGraph.cause(candidate.causeId).title;
+      }
+      return {
+        id: anomalyId,
+        symptoms: observedSymptoms(state.diagnosis, anomalyId, tick).map((symptomId) => ({
+          title: config.causeGraph.symptom(symptomId).title,
+          strength:
+            anomaly.symptoms.find((symptom) => symptom.symptomId === symptomId)?.strength ?? 0,
+        })),
+        candidates,
+        candidateTitles: titles,
+        secondsToEscalation: ticksToEscalation(anomaly, tick) / TICKS_PER_SECOND,
+        escalationWindow_s: config.causeGraph.escalationWindow_s(anomaly.causeId),
+      };
+    });
+  }
+
+  /**
+   * The measures on offer for the focused anomaly.
+   *
+   * A diagnosis is marked redundant once it can no longer separate any two
+   * surviving candidates. The panel greys it rather than hiding it, so the
+   * player can see they have already bought that answer instead of wondering
+   * where the button went.
+   */
+  private measureViews(state: MissionState, tick: number): MeasureView[] {
+    const focus = this.focusedAnomalyId(state, tick);
+    const candidates =
+      focus === null ? [] : candidatesFor(state.diagnosis, config.causeGraph, focus, tick);
+    const useful = new Set(config.causeGraph.usefulDiagnoses(candidates));
+
+    return config.causeGraph.measureIds.map((measureId) => {
+      const measure = config.causeGraph.measure(measureId);
+      return {
+        id: measureId,
+        title: measure.title,
+        duration_s: measure.duration_s,
+        occupies: measure.occupies,
+        kind: measure.type,
+        redundant: measure.type === 'diagnosis' && !useful.has(measureId),
+      };
+    });
+  }
+
+  /**
+   * The command timeline, including commands still sitting in the engine
+   * queue.
+   *
+   * While paused no tick runs, so a measure the player just queued has not
+   * reached the scheduler yet — it is a pending command. Projecting only the
+   * scheduler would show an empty timeline at exactly the moment the player is
+   * planning against it, which is the one moment it has to be right (§5.7).
+   */
+  private projectQueued(state: MissionState, tick: number): ProjectedMeasure[] {
+    const pendingCommands = this.engine.pending.filter(
+      (command) => command.type === 'queueMeasure',
+    );
+    if (pendingCommands.length === 0) {
+      return projectSchedule(
+        state.diagnosis.schedule,
+        tick,
+        config.causeGraph.specs,
+        config.causeGraph.capacities,
+      );
+    }
+
+    const merged = {
+      running: [...state.diagnosis.schedule.running],
+      completed: [...state.diagnosis.schedule.completed],
+      pending: [
+        ...state.diagnosis.schedule.pending,
+        ...pendingCommands.map((command) => {
+          const payload = command.payload as { measureId: string; anomalyId: string };
+          return {
+            measureId: payload.measureId,
+            targetId: payload.anomalyId,
+            queuedTick: command.tick,
+          };
+        }),
+      ],
+    };
+    return projectSchedule(merged, tick, config.causeGraph.specs, config.causeGraph.capacities);
+  }
+
+  private channelView(state: MissionState): ChannelView {
+    const capacity = config.causeGraph.capacities['channel:any'] ?? 1;
+    let inUse = 0;
+    for (const running of state.diagnosis.schedule.running) {
+      const spec = config.causeGraph.specs.get(running.measureId);
+      for (const resource of spec?.occupies ?? []) {
+        if (resource === 'channel:any') inUse += 1;
+      }
+    }
+    return { capacity, inUse };
+  }
+
+  /** The anomaly the console acts on: whichever is closest to escalating. */
+  private focusedAnomalyId(state: MissionState, tick: number): string | null {
+    const open = openAnomalies(state.diagnosis, tick);
+    if (open.length === 0) return null;
+    let focus = open[0];
+    let soonest = Number.POSITIVE_INFINITY;
+    for (const anomalyId of open) {
+      const anomaly = state.diagnosis.anomalies.anomalies.find((entry) => entry.id === anomalyId)!;
+      const remaining = ticksToEscalation(anomaly, tick);
+      if (remaining < soonest) {
+        soonest = remaining;
+        focus = anomalyId;
+      }
+    }
+    return focus;
   }
 }
 
@@ -308,5 +530,11 @@ function emptyTelemetry(): Telemetry {
     orbit: null,
     position: { x: EARTH_RADIUS_M, y: 0 },
     trail: [],
+    console: 'launch',
+    anomalies: [],
+    measures: [],
+    timeline: [],
+    channels: { capacity: 0, inUse: 0 },
+    resultOffer: null,
   };
 }

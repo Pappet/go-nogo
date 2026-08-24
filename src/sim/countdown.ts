@@ -292,6 +292,10 @@ export function createMissionSimulation(config: MissionConfigInput): Simulation<
     );
 
     for (const event of outcome.events) {
+      // The onset itself is not observable — no reading has moved yet. Logging
+      // "anomaly detected" there would claim knowledge the player does not
+      // have; the symptom entries are what they actually see.
+      if (event.type === 'ONSET') continue;
       record(state, tick, `ANOMALY_${event.type}`, event.detail);
     }
     for (const result of outcome.results) {

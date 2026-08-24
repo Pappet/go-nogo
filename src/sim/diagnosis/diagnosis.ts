@@ -190,10 +190,13 @@ export function stepDiagnosis(
 
   events.push(...stepAnomalies(state.anomalies, graph, tick));
 
-  // Auto-pause once per new anomaly, decided at the tick it appears.
+  // Auto-pause once per new anomaly — on the tick the player could first
+  // *see* it, not on the invisible onset. Stopping the clock at onset hands
+  // them a panel with no symptoms, no candidates and nothing to decide.
+  // A chain announces itself immediately, so it counts as visible at once.
   let autoPause = false;
   for (const event of events) {
-    if (event.type === 'ONSET' || event.type === 'CHAIN') {
+    if (event.type === 'SYMPTOM' || event.type === 'CHAIN') {
       if (shouldAutoPause(state.pause, event.anomalyId)) autoPause = true;
     }
   }
