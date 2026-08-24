@@ -42,6 +42,7 @@ import type { RocketDef } from '../sim/physics/thrust.js';
 import { GAME_VERSION, type Run, computeDataVersion } from '../replay/run.js';
 
 import { playAlert, playBeep, playIgnitionRumble, playSwitchClick, unlockAudio } from './audio/synth.js';
+import { TrailSampler } from './trail.js';
 
 const rocket = rocketData as RocketDef;
 const pitchProgram = pitchData as PitchProgram;
@@ -50,8 +51,9 @@ const config = { rocket, pitchProgram, checklist };
 
 const SAVE_KEY = 'go-nogo/run';
 const AUTOSAVE_INTERVAL_MS = 30000;
-/** Sample the map trail every half second of simulated time. */
+/** Shortest gap between two map trail samples, in simulated ticks. */
 const TRAIL_INTERVAL_TICKS = 10;
+/** Points the trail keeps. Reaching it halves the resolution, never the span. */
 const TRAIL_LIMIT = 900;
 
 export interface OrbitReadout {
@@ -91,7 +93,7 @@ export class Mission {
 
   private engine = new Engine(createMissionSimulation(config), createMissionState(checklist));
   private commands: Command[] = [];
-  private trail: { x: number; y: number }[] = [];
+  private trailSampler = new TrailSampler(TRAIL_INTERVAL_TICKS, TRAIL_LIMIT);
   private frameHandle = 0;
   private lastFrameMs = 0;
   private lastAutosaveMs = 0;
@@ -166,7 +168,7 @@ export class Mission {
   reset(): void {
     this.engine = new Engine(createMissionSimulation(config), createMissionState(checklist));
     this.commands = [];
-    this.trail = [];
+    this.trailSampler.reset();
     this.announcedEvents = 0;
     this.telemetry = this.snapshot();
   }
@@ -202,8 +204,9 @@ export class Mission {
         // Flown against different numbers: the run would not reproduce.
         return false;
       }
-      if (saved.tick <= 0 && saved.run.commands.length === 0) {
-        // A save taken before anything happened restores nothing worth saying.
+      if (saved.run.commands.length === 0) {
+        // Nothing was ever commanded, so the save restores a vehicle sitting on
+        // the pad — no different from starting fresh, and not worth announcing.
         return false;
       }
       this.reset();
@@ -247,9 +250,7 @@ export class Mission {
   private captureTrail(): void {
     const flight = this.state.flight;
     if (flight.liftoffTick < 0) return;
-    if (flight.tick % TRAIL_INTERVAL_TICKS !== 0) return;
-    this.trail.push({ x: flight.positionX, y: flight.positionY });
-    if (this.trail.length > TRAIL_LIMIT) this.trail.shift();
+    this.trailSampler.offer(flight.tick, flight.positionX, flight.positionY);
   }
 
   private snapshot(): Telemetry {
@@ -277,7 +278,7 @@ export class Mission {
       events: state.events.slice(-14),
       orbit: readOrbit(flight.positionX, flight.positionY, flight.velocityX, flight.velocityY),
       position: { x: flight.positionX, y: flight.positionY },
-      trail: [...this.trail],
+      trail: [...this.trailSampler.trail],
     };
   }
 }
