@@ -7,11 +7,8 @@
  * UI never writes simulation state — player actions become tick-stamped
  * commands, and the console reads a snapshot taken after the ticks have run.
  */
-import checklistData from '../data/checklist.json' with { type: 'json' };
-import pitchData from '../data/pitchProgram.json' with { type: 'json' };
-import rocketData from '../data/rocket.json' with { type: 'json' };
+import { createMissionConfig, checklist, rocket, pitchProgram } from '../missionConfig.js';
 import {
-  type ChecklistDef,
   type CountdownPhase,
   type MissionEvent,
   type MissionState,
@@ -29,7 +26,6 @@ import {
   velocityOf,
 } from '../sim/flight.js';
 import { altitudeOf, environmentAt, speedOf } from '../sim/physics/ascent.js';
-import type { PitchProgram } from '../sim/physics/ascentProgram.js';
 import { EARTH_RADIUS_M, MU_EARTH } from '../sim/physics/constants.js';
 import {
   type OrbitalElements,
@@ -38,16 +34,12 @@ import {
   periapsisRadius_m,
   stateToElements,
 } from '../sim/physics/kepler.js';
-import type { RocketDef } from '../sim/physics/thrust.js';
 import { GAME_VERSION, type Run, computeDataVersion } from '../replay/run.js';
 
 import { playAlert, playBeep, playIgnitionRumble, playSwitchClick, unlockAudio } from './audio/synth.js';
 import { TrailSampler } from './trail.js';
 
-const rocket = rocketData as RocketDef;
-const pitchProgram = pitchData as PitchProgram;
-const checklist = checklistData as ChecklistDef;
-const config = { rocket, pitchProgram, checklist };
+const config = createMissionConfig();
 
 const SAVE_KEY = 'go-nogo/run';
 const AUTOSAVE_INTERVAL_MS = 30000;
@@ -91,7 +83,7 @@ export const targetOrbit = rocket.targetOrbit;
 export class Mission {
   telemetry = $state<Telemetry>(emptyTelemetry());
 
-  private engine = new Engine(createMissionSimulation(config), createMissionState(checklist));
+  private engine = new Engine(createMissionSimulation(config), createMissionState(config));
   private commands: Command[] = [];
   private trailSampler = new TrailSampler(TRAIL_INTERVAL_TICKS, TRAIL_LIMIT);
   private frameHandle = 0;
@@ -166,7 +158,7 @@ export class Mission {
 
   /** Starts over from a fresh pad. The run recording restarts with it. */
   reset(): void {
-    this.engine = new Engine(createMissionSimulation(config), createMissionState(checklist));
+    this.engine = new Engine(createMissionSimulation(config), createMissionState(config));
     this.commands = [];
     this.trailSampler.reset();
     this.announcedEvents = 0;

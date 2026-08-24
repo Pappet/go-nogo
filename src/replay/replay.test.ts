@@ -15,13 +15,9 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import checklistData from '../data/checklist.json' with { type: 'json' };
-import pitchData from '../data/pitchProgram.json' with { type: 'json' };
-import rocketData from '../data/rocket.json' with { type: 'json' };
-import { type ChecklistDef, createMissionState } from '../sim/countdown.js';
+import { createMissionConfig } from '../missionConfig.js';
+import { createMissionState } from '../sim/countdown.js';
 import type { Command } from '../sim/engine.js';
-import type { PitchProgram } from '../sim/physics/ascentProgram.js';
-import type { RocketDef } from '../sim/physics/thrust.js';
 
 import { HASH_INTERVAL_TICKS, play, playRun, verifyRun } from './playback.js';
 import {
@@ -33,11 +29,7 @@ import {
   sliceRun,
 } from './run.js';
 
-const config = {
-  rocket: rocketData as RocketDef,
-  pitchProgram: pitchData as PitchProgram,
-  checklist: checklistData as ChecklistDef,
-};
+const config = createMissionConfig();
 
 /**
  * Seed 42 and a fixed command log, exactly as CLAUDE.md specifies.
@@ -198,8 +190,8 @@ describe('double playback', () => {
 
   it('is unaffected by a fresh state object', () => {
     // Guards against state leaking through module scope between runs.
-    const first = play(config, COMMANDS, 3000, createMissionState(config.checklist));
-    const second = play(config, COMMANDS, 3000, createMissionState(config.checklist));
+    const first = play(config, COMMANDS, 3000, createMissionState(config));
+    const second = play(config, COMMANDS, 3000, createMissionState(config));
     expect(second.finalHash).toBe(first.finalHash);
   });
 });

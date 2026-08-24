@@ -11,6 +11,8 @@
  * the wreckage instead of reporting it.
  */
 import { type MissionState, phaseIndex } from '../sim/countdown.js';
+import type { DiagnosisState } from '../sim/diagnosis/diagnosis.js';
+import { pauseModelIndex } from '../sim/pauseModel.js';
 import type { FlightState } from '../sim/flight.js';
 
 import { sha256 } from './sha256.js';
@@ -100,7 +102,69 @@ export function encodeMissionState(state: MissionState, writer: CanonicalWriter)
   writer.int32(state.ignitionTick, 'ignitionTick');
   writer.int32(state.events.length, 'events.length');
   writer.float64(state.previousDynamicPressure_Pa, 'previousDynamicPressure_Pa');
+  writer.boolean(state.pauseRequested);
+  encodeDiagnosisState(state.diagnosis, writer);
   encodeFlightState(state.flight, writer);
+}
+
+/**
+ * Writes the diagnosis runtime.
+ *
+ * Anomalies are written in full rather than counted: a desync that moved one
+ * anomaly's onset by a tick, or resolved the wrong one, has to be caught. The
+ * schedule and results are counted with their identifying fields for the same
+ * reason — a queue that drifted apart between two runs is exactly the failure
+ * the 600-tick sampling exists to localise.
+ */
+export function encodeDiagnosisState(state: DiagnosisState, writer: CanonicalWriter): void {
+  writer.int32(pauseModelIndex(state.pause.model), 'pause.model');
+  writer.boolean(state.pause.paused);
+  writer.int32(state.pause.actionsThisPause, 'pause.actionsThisPause');
+  writer.int32(state.pause.autoPausedFor.length, 'pause.autoPausedFor.length');
+  writer.boolean(state.pause.offer !== null);
+
+  writer.int32(state.missionTags.length, 'missionTags.length');
+  for (const tag of state.missionTags) writer.string(tag);
+
+  writer.int32(state.anomalies.anomalies.length, 'anomalies.length');
+  for (const anomaly of state.anomalies.anomalies) {
+    writer.string(anomaly.id);
+    writer.string(anomaly.causeId);
+    writer.int32(anomaly.onsetTick, 'anomaly.onsetTick');
+    writer.int32(anomaly.escalationTick, 'anomaly.escalationTick');
+    writer.int32(anomaly.resolvedTick, 'anomaly.resolvedTick');
+    writer.int32(anomaly.escalatedTick, 'anomaly.escalatedTick');
+    writer.int32(anomaly.applied.length, 'anomaly.applied.length');
+    for (const applied of anomaly.applied) {
+      writer.string(applied.measureId);
+      writer.int32(applied.tick, 'applied.tick');
+      writer.boolean(applied.correct);
+    }
+  }
+  writer.int32(state.anomalies.nextChainSerial, 'anomalies.nextChainSerial');
+
+  writer.int32(state.schedule.running.length, 'schedule.running.length');
+  for (const running of state.schedule.running) {
+    writer.string(running.measureId);
+    writer.string(running.targetId);
+    writer.int32(running.startTick, 'running.startTick');
+    writer.int32(running.endTick, 'running.endTick');
+  }
+  writer.int32(state.schedule.pending.length, 'schedule.pending.length');
+  for (const pending of state.schedule.pending) {
+    writer.string(pending.measureId);
+    writer.string(pending.targetId);
+    writer.int32(pending.queuedTick, 'pending.queuedTick');
+  }
+  writer.int32(state.schedule.completed.length, 'schedule.completed.length');
+
+  writer.int32(state.results.length, 'results.length');
+  for (const result of state.results) {
+    writer.string(result.measureId);
+    writer.int32(result.tick, 'result.tick');
+    writer.boolean(result.confirmed !== null);
+    writer.int32(result.excluded.length, 'result.excluded.length');
+  }
 }
 
 /** SHA-256 over the canonical encoding of a flight state. */

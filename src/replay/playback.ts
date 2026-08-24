@@ -39,7 +39,7 @@ export function play(
   untilTick: number,
   startState?: MissionState,
 ): PlaybackResult {
-  const state = startState ?? createMissionState(config.checklist);
+  const state = startState ?? createMissionState(config);
   // A resumed state already carries the tick it is valid at; the engine has to
   // continue from there instead of counting from zero again.
   const engine = new Engine(createMissionSimulation(config), state, state.flight.tick);

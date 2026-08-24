@@ -9,8 +9,7 @@
 import { describe, expect, it } from 'vitest';
 
 import checklistData from '../data/checklist.json' with { type: 'json' };
-import pitchData from '../data/pitchProgram.json' with { type: 'json' };
-import rocketData from '../data/rocket.json' with { type: 'json' };
+import { createMissionConfig } from '../missionConfig.js';
 
 import {
   COUNTDOWN_PHASES,
@@ -25,18 +24,12 @@ import {
 } from './countdown.js';
 import { Engine } from './engine.js';
 import { missionTime_s } from './flight.js';
-import type { PitchProgram } from './physics/ascentProgram.js';
-import type { RocketDef } from './physics/thrust.js';
 
 const checklist = checklistData as ChecklistDef;
-const config = {
-  rocket: rocketData as RocketDef,
-  pitchProgram: pitchData as PitchProgram,
-  checklist,
-};
+const config = createMissionConfig();
 
 function createEngine(): Engine<MissionState> {
-  return new Engine(createMissionSimulation(config), createMissionState(checklist));
+  return new Engine(createMissionSimulation(config), createMissionState(config));
 }
 
 function completeChecklist(engine: Engine<MissionState>): void {
@@ -57,7 +50,7 @@ function flyNominalMission(ticks = 12000): MissionState {
 
 describe('hold', () => {
   it('starts in HOLD with every switch at NO GO', () => {
-    const state = createMissionState(checklist);
+    const state = createMissionState(config);
     expect(state.phase).toBe('HOLD');
     expect(state.checklist).toHaveLength(checklist.items.length);
     expect(allChecklistItemsGo(state)).toBe(false);
@@ -106,7 +99,7 @@ describe('hold', () => {
   });
 
   it('holds the clock at zero while holding', () => {
-    expect(countdownDisplay_s(createMissionState(checklist))).toBe(0);
+    expect(countdownDisplay_s(createMissionState(config))).toBe(0);
   });
 });
 
@@ -177,7 +170,7 @@ describe('the full sequence', () => {
 
   it('passes through every phase in order, exactly once', () => {
     const milestones = state.events
-      .filter((event) => event.type !== 'CHECKLIST')
+      .filter((event) => COUNTDOWN_PHASES.includes(event.type as CountdownPhase))
       .map((event) => event.type);
     expect(milestones).toEqual([
       'ARMED',
@@ -193,7 +186,7 @@ describe('the full sequence', () => {
   it('never moves a phase backwards', () => {
     let highest = -1;
     for (const event of state.events) {
-      if (event.type === 'CHECKLIST') continue;
+      if (!COUNTDOWN_PHASES.includes(event.type as CountdownPhase)) continue;
       const index = phaseIndex(event.type as CountdownPhase);
       expect(index).toBeGreaterThan(highest);
       highest = index;
