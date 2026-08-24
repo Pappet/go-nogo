@@ -1,0 +1,16 @@
+{
+  "description": "Runtime tuning for the anomaly system. The cause graph itself lives in causes.json; these are the numbers that decide how often a cause fires, when, and how it presents.",
+  "occurrenceProbability": 0.55,
+  "onsetWindow_s": {
+    "earliest": 20,
+    "latest": 260
+  },
+  "symptomStrength": {
+    "min": 0.35,
+    "max": 1.0
+  },
+  "symptomDelay_s": {
+    "min": 0,
+    "max": 12
+  }
+}

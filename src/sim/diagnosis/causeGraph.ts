@@ -186,13 +186,13 @@ export interface SymptomInstance {
   readonly delay_s: number;
 }
 
-/** Symptom strength stays inside this band, so a symptom is never invisible. */
-export const MIN_STRENGTH = 0.35;
-export const MAX_STRENGTH = 1;
-
-/** Onset delay range in seconds. */
-export const MIN_DELAY_S = 0;
-export const MAX_DELAY_S = 12;
+/** The bands the drawn values fall into. They live in `data/anomalies.json`. */
+export interface SymptomBands {
+  /** Strength stays inside this band, so a symptom is never invisible. */
+  readonly symptomStrength: { readonly min: number; readonly max: number };
+  /** Seconds between the fault starting and the reading showing it. */
+  readonly symptomDelay_s: { readonly min: number; readonly max: number };
+}
 
 function scale(unit: number, low: number, high: number): number {
   return low + unit * (high - low);
@@ -207,6 +207,7 @@ function scale(unit: number, low: number, high: number): number {
  */
 export function buildSymptomInstances(
   graph: CauseGraph,
+  bands: SymptomBands,
   seed: number,
   missionKey: string,
   causeId: string,
@@ -215,8 +216,16 @@ export function buildSymptomInstances(
     const key = `${missionKey}/${causeId}/${symptomId}`;
     return {
       symptomId,
-      strength: scale(hashUnit(seed, key, 'symptomStrength'), MIN_STRENGTH, MAX_STRENGTH),
-      delay_s: scale(hashUnit(seed, key, 'symptomDelay'), MIN_DELAY_S, MAX_DELAY_S),
+      strength: scale(
+        hashUnit(seed, key, 'symptomStrength'),
+        bands.symptomStrength.min,
+        bands.symptomStrength.max,
+      ),
+      delay_s: scale(
+        hashUnit(seed, key, 'symptomDelay'),
+        bands.symptomDelay_s.min,
+        bands.symptomDelay_s.max,
+      ),
     };
   });
 }

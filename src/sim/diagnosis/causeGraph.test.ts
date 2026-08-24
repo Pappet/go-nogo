@@ -8,14 +8,13 @@
  */
 import { describe, expect, it } from 'vitest';
 
+import anomalySettings from '../../data/anomalies.json' with { type: 'json' };
 import causesData from '../../data/causes.json' with { type: 'json' };
 import { hashUnit } from '../rng.js';
 
 import {
   type CauseGraphData,
-  MAX_DELAY_S,
-  MAX_STRENGTH,
-  MIN_STRENGTH,
+  type SymptomBands,
   buildSymptomInstances,
   loadCauseGraph,
   validateCauseGraph,
@@ -23,6 +22,7 @@ import {
 
 const data = causesData as unknown as CauseGraphData;
 const graph = loadCauseGraph(data);
+const bands = anomalySettings as SymptomBands;
 
 describe('the shipped graph', () => {
   it('loads and validates', () => {
@@ -149,22 +149,22 @@ describe('measures and consequences', () => {
 describe('symptom instances', () => {
   it('are addressable — same mission, same numbers', () => {
     // The property the surgical retry rests on (§8.2 rule 4).
-    const first = buildSymptomInstances(graph, 42, 'mission-1', 'cause_prop_leak');
+    const first = buildSymptomInstances(graph, bands, 42, 'mission-1', 'cause_prop_leak');
     for (let i = 0; i < 50; i++) hashUnit(42, `noise-${i}`, 'unrelated');
-    const again = buildSymptomInstances(graph, 42, 'mission-1', 'cause_prop_leak');
+    const again = buildSymptomInstances(graph, bands, 42, 'mission-1', 'cause_prop_leak');
     expect(again).toEqual(first);
   });
 
   it('differ between missions, causes and seeds', () => {
-    const base = buildSymptomInstances(graph, 42, 'mission-1', 'cause_prop_leak');
-    const otherMission = buildSymptomInstances(graph, 42, 'mission-2', 'cause_prop_leak');
-    const otherSeed = buildSymptomInstances(graph, 43, 'mission-1', 'cause_prop_leak');
+    const base = buildSymptomInstances(graph, bands, 42, 'mission-1', 'cause_prop_leak');
+    const otherMission = buildSymptomInstances(graph, bands, 42, 'mission-2', 'cause_prop_leak');
+    const otherSeed = buildSymptomInstances(graph, bands, 43, 'mission-1', 'cause_prop_leak');
     expect(otherMission).not.toEqual(base);
     expect(otherSeed).not.toEqual(base);
   });
 
   it('covers every symptom the cause produces', () => {
-    const instances = buildSymptomInstances(graph, 7, 'mission-1', 'cause_prop_leak');
+    const instances = buildSymptomInstances(graph, bands, 7, 'mission-1', 'cause_prop_leak');
     expect(instances.map((instance) => instance.symptomId)).toEqual(
       graph.cause('cause_prop_leak').symptoms,
     );
@@ -173,11 +173,11 @@ describe('symptom instances', () => {
   it('stays inside the visible band, so a symptom is never invisible', () => {
     for (let mission = 0; mission < 200; mission++) {
       for (const causeId of graph.causeIds) {
-        for (const instance of buildSymptomInstances(graph, 42, `m${mission}`, causeId)) {
-          expect(instance.strength).toBeGreaterThanOrEqual(MIN_STRENGTH);
-          expect(instance.strength).toBeLessThanOrEqual(MAX_STRENGTH);
-          expect(instance.delay_s).toBeGreaterThanOrEqual(0);
-          expect(instance.delay_s).toBeLessThanOrEqual(MAX_DELAY_S);
+        for (const instance of buildSymptomInstances(graph, bands, 42, `m${mission}`, causeId)) {
+          expect(instance.strength).toBeGreaterThanOrEqual(bands.symptomStrength.min);
+          expect(instance.strength).toBeLessThanOrEqual(bands.symptomStrength.max);
+          expect(instance.delay_s).toBeGreaterThanOrEqual(bands.symptomDelay_s.min);
+          expect(instance.delay_s).toBeLessThanOrEqual(bands.symptomDelay_s.max);
         }
       }
     }
@@ -189,7 +189,7 @@ describe('symptom instances', () => {
     const strengths = new Set<number>();
     const delays = new Set<number>();
     for (let mission = 0; mission < 100; mission++) {
-      for (const instance of buildSymptomInstances(graph, 42, `m${mission}`, 'cause_prop_leak')) {
+      for (const instance of buildSymptomInstances(graph, bands, 42, `m${mission}`, 'cause_prop_leak')) {
         strengths.add(Math.round(instance.strength * 20));
         delays.add(Math.round(instance.delay_s));
       }
