@@ -1,7 +1,8 @@
 # GO/NOGO – Project Rules for Claude Code
 
 Mission control game (web, TypeScript). Full specification: `docs/CONCEPT_v4.md` (design freeze).
-**Current assignment: Phase 0 ("The Countdown") – nothing beyond it.**
+**Current assignment: Phase 1 ("The Diagnosis") – nothing beyond it.**
+Phase 0 is delivered and merged; it is the foundation everything below builds on.
 If this file and the concept contradict each other, the concept wins – report the contradiction instead of deciding silently.
 
 ## Language (hard)
@@ -18,23 +19,25 @@ The game ships English-only for now; there is no i18n layer in Phase 0 (see the 
 
 ## Scope Fence (hard)
 
-Phase 0 covers ONLY (concept §9):
-- One hard-wired two-stage rocket (data in `data/rocket.json`)
-- LAUNCH console: checklist switches, countdown state machine, ignition sequence
-- Pitch program, live telemetry (altitude, v, G), MAX_Q/MECO/SEP/ORBIT_CHECK events
-- Kepler propagator + a simple canvas orbit map
-- Tick engine, command queue, RNG, replay + hash CI, save/resume
-- Hotkeys `1`–`5` and `Space`; synthetic sounds (Web Audio)
+Phase 1 covers ONLY (concept §9):
+- Cause graph v1 as data: 4 causes, 6 symptoms, 8 measures, 2 side-effect chains (`src/data/causes.json`) – **the linter runs in CI** (§8.4)
+- Anomaly runtime: seeded symptom instances with varying `strength`/`delay_s`, context priors v1 (§5.2)
+- Resource model (§5.2): a measure occupies resources for its duration; conflict-free measures run **in parallel**
+- Pause model Standard (§5.7): auto-pause once per *new* anomaly, soft RESULT READY offer, unlimited queuing, command timeline preview
+- ENGINEERING console: diagnosis panel with candidate bars, measures with costs, act-without-certainty row, escalation clock, channel matrix (4 channels)
+- Risk budget (static), post-mortem with the cause chain, two retry buttons (§5.4)
+- Hotkey scheme §7.7 – **mandatory from this phase**, including `1`–`5` for console switching
 
 Do NOT build – not even "prepare" (no scaffolding, no empty modules, no interfaces kept in stock):
-- Anomaly/diagnosis system, cause graph, resource model
-- Economy, contracts, markets, doctrines, tech tree, staff
-- Engineering/comms console, policy editor, fleet ops, light delay
-- Leaderboard/server, daily challenge, modding, i18n
+- Economy, contracts, markets, doctrines, tech tree, staff hiring
+- Configurator with QA levels and redundancy (Phase 2 – the Phase 1 risk budget is *static*)
+- COMMS console beyond the channel matrix, policy editor, fleet ops, light delay (Phase 3a/3b)
+- Real-time mode (§5.7 – Phase 3a); Phase 1 ships Standard only
+- Leaderboard/server, daily challenge, modding, i18n, tutorial missions
 
 If a task appears to need any of these → stop and ask.
 
-**Phase 1 assets already in the repo:** `tools/graphLint.ts` and `data/causes.json` (concept §11, steps 1–2) were delivered by the project owner. They are Phase 1 content: they stay where they are, `src/**` never imports them, and no Phase 0 work builds on them.
+**Phase 0 stays honest.** The countdown, the physics, the engine, the replay harness and the LAUNCH console are delivered. Changing them is allowed where Phase 1 genuinely needs it – but a moved replay hash is a breaking change: regenerate the fixture deliberately and justify it in the commit.
 
 ## Determinism (non-negotiable, concept §8.2)
 
@@ -49,20 +52,33 @@ Inside `src/sim/**` this holds absolutely:
 6. **State hash never via `JSON.stringify`:** canonical binary encoding (fixed schema order, `DataView.setFloat64` little-endian), hash the bytes (SHA-256). `NaN`/`Infinity` forbidden via debug assert.
 7. Auto-pause is a sim state at a tick, not a UI timer.
 
-## Architecture (concept §8.3, Phase 0 subset)
+## Architecture (concept §8.3, Phase 0 + 1 subset)
+
+Delivered in Phase 0:
 
 ```
 src/
-├── sim/        engine.ts, math.ts, rng.ts, countdown.ts,
-│               physics/{kepler,thrust,ascentProgram}.ts
-├── data/       rocket.json, pitchProgram.json
-├── replay/     run.ts, playback.ts, hash.ts
-├── ui/         consoles/launch/, hotkeys.ts, audio/synth.ts,
-│               widgets/{Gauge,SevenSeg,ToggleSwitch,EventLog}.svelte
+├── sim/        engine.ts, math.ts, rng.ts, countdown.ts, flight.ts,
+│               physics/{kepler,thrust,ascentProgram,ascent,constants}.ts
+├── data/       rocket.json, pitchProgram.json, checklist.json
+├── replay/     run.ts, playback.ts, hash.ts, sha256.ts
+├── ui/         consoles/launch/, hotkeys.ts, format.ts, mission.svelte.ts,
+│               audio/synth.ts, widgets/*.svelte
 └── main.ts
 ```
 
-All tuning numbers (masses, Isp, thrust, pitch program, max-Q limits) live in `data/*.json` – never hard-coded.
+Phase 1 adds (concept §8.3):
+
+```
+src/
+├── sim/diagnosis/   causeGraph.ts, priors.ts, measures.ts
+├── sim/systems/     anomaly.ts
+├── data/            causes.json
+└── ui/consoles/     engineering/, postmortem/
+```
+
+All tuning numbers (masses, Isp, thrust, pitch nodes, max-Q limits, measure durations,
+escalation windows, resource capacities) live in `src/data/*.json` – never hard-coded.
 
 ## Stack
 
@@ -82,8 +98,9 @@ Vite · TypeScript strict (no `any`) · Svelte · Canvas 2D (orbit map) + SVG (g
 - Small, thematic commits (Conventional Commits, English description).
 - No additional dependencies without asking.
 
-## Definition of Done – Phase 0 (concept §9/§11)
+## Definition of Done – Phase 1 (concept §9)
 
-1. `HOLD → ARMED → IGNITION → LIFTOFF → MAX_Q → MECO → SEP → ORBIT_CHECK` runs with live telemetry, event log and sound.
-2. CI green, including the replay, save/resume and double playback tests.
-3. "You immediately want to press launch again" – a human judgment call, not yours: show the prototype to Peter.
+1. An anomaly appears, is diagnosable under resource scarcity, and a wrong measure has a consequence the post-mortem can show.
+2. CI green: the Phase 0 replay, save/resume and double playback tests still pass, plus the graph linter.
+3. **Replay test:** 3 testers play the same mission 5×; we measure from which run on they guess correctly without diagnosing. **Done when run 5 still surprises** – otherwise densify the graph before Phase 2. The A/B comparison "unlimited queuing vs. one action per pause" runs alongside.
+4. Criterion 3 is a human measurement, not yours: it needs testers on a real screen.
