@@ -39,14 +39,22 @@ export interface MeasureSpec {
 /** Capacities per resource token. Anything unlisted has capacity 1. */
 export type ResourceCapacities = Readonly<Record<string, number>>;
 
+/**
+ * Measures are queued against a target — the anomaly they address. The
+ * scheduler never interprets it; it carries it so that a completed measure
+ * knows what it was for, and so the same measure can be queued twice for two
+ * different anomalies without the two becoming one.
+ */
 export interface RunningMeasure {
   readonly measureId: string;
+  readonly targetId: string;
   readonly startTick: number;
   readonly endTick: number;
 }
 
 export interface PendingMeasure {
   readonly measureId: string;
+  readonly targetId: string;
   readonly queuedTick: number;
 }
 
@@ -115,9 +123,14 @@ function canStart(
   return true;
 }
 
-/** Queues a measure. It starts on the next tick its resources allow. */
-export function enqueueMeasure(state: ScheduleState, measureId: string, tick: number): void {
-  state.pending.push({ measureId, queuedTick: tick });
+/** Queues a measure against a target. It starts as soon as its resources allow. */
+export function enqueueMeasure(
+  state: ScheduleState,
+  measureId: string,
+  tick: number,
+  targetId = '',
+): void {
+  state.pending.push({ measureId, targetId, queuedTick: tick });
 }
 
 /**
@@ -158,6 +171,7 @@ export function advanceSchedule(
     if (canStart(spec, state.running, specs, capacities)) {
       state.running.push({
         measureId: waiting.measureId,
+        targetId: waiting.targetId,
         startTick: tick,
         endTick: tick + durationTicks(spec),
       });
@@ -172,6 +186,7 @@ export function advanceSchedule(
 
 export interface ProjectedMeasure {
   readonly measureId: string;
+  readonly targetId: string;
   readonly startTick: number;
   readonly endTick: number;
   /** True while the measure is still waiting for a resource to free up. */
@@ -192,6 +207,7 @@ export function projectSchedule(
 ): ProjectedMeasure[] {
   const projection: ProjectedMeasure[] = state.running.map((active) => ({
     measureId: active.measureId,
+    targetId: active.targetId,
     startTick: active.startTick,
     endTick: active.endTick,
     waiting: false,
@@ -220,6 +236,7 @@ export function projectSchedule(
       if (waiting.queuedTick <= now && canStart(spec, running, specs, capacities)) {
         const placed = {
           measureId: waiting.measureId,
+          targetId: waiting.targetId,
           startTick: now,
           endTick: now + durationTicks(spec),
         };
