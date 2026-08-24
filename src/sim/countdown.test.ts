@@ -26,7 +26,12 @@ import { Engine } from './engine.js';
 import { missionTime_s } from './flight.js';
 
 const checklist = checklistData as ChecklistDef;
-const config = createMissionConfig();
+/**
+ * A mission with no anomalies. These tests are about the countdown machine,
+ * and an unattended anomaly now cascades into a lost vehicle — which would
+ * cut the ascent short and tell us nothing about the sequence.
+ */
+const config = createMissionConfig({ missionKey: 'mission-78' });
 
 function createEngine(): Engine<MissionState> {
   return new Engine(createMissionSimulation(config), createMissionState(config));

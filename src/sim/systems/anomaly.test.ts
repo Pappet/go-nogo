@@ -16,6 +16,7 @@ import { hashUnit } from '../rng.js';
 
 import {
   type Anomaly,
+  type AnomalyEvent,
   type AnomalySettings,
   type AnomalyState,
   activeAnomalies,
@@ -338,5 +339,63 @@ describe('the cause chain the post-mortem shows', () => {
     const { anomaly } = missionContaining('cause_prop_leak');
     const state = stateWith([{ ...anomaly, applied: [] }]);
     expect(causeChain(state, anomaly.id)).toHaveLength(1);
+  });
+});
+
+describe('an unattended anomaly becomes the next one', () => {
+  const withSettings = (state: AnomalyState, tick: number): AnomalyEvent[] =>
+    stepAnomalies(state, graph, tick, settings, 42, 'mission-1');
+
+  it('cascades into the chain the graph names', () => {
+    // §5.3: doing nothing is not neutral. The window closing hands the fault
+    // to whatever it turns into.
+    const { anomaly } = missionContaining('cause_bus_short');
+    const state = stateWith([{ ...anomaly, applied: [] }]);
+    const events = withSettings(state, anomaly.escalationTick);
+
+    expect(events.map((event) => event.type)).toContain('CHAIN');
+    expect(state.anomalies).toHaveLength(2);
+    expect(state.anomalies[1].causeId).toBe(graph.escalationTarget('cause_bus_short'));
+    expect(state.anomalies[1].spawnedBy).toBe(anomaly.id);
+  });
+
+  it('gives the cascade its own, shorter window', () => {
+    const { anomaly } = missionContaining('cause_bus_short');
+    const state = stateWith([{ ...anomaly, applied: [] }]);
+    withSettings(state, anomaly.escalationTick);
+
+    const chain = state.anomalies[1];
+    expect(chain.onsetTick).toBe(anomaly.escalationTick);
+    expect(chain.escalationTick - chain.onsetTick).toBe(
+      seconds(graph.escalationWindow_s(chain.causeId)),
+    );
+    expect(chain.escalationTick - chain.onsetTick).toBeLessThan(
+      anomaly.escalationTick - anomaly.onsetTick,
+    );
+  });
+
+  it('loses the mission when a chain has nothing left to become', () => {
+    const { anomaly } = missionContaining('cause_bus_short');
+    const state = stateWith([{ ...anomaly, applied: [] }]);
+    withSettings(state, anomaly.escalationTick);
+
+    const chain = state.anomalies[1];
+    const events = withSettings(state, chain.escalationTick);
+    expect(events.map((event) => event.type)).toContain('LOST');
+  });
+
+  it('cascades nothing when the anomaly was resolved in time', () => {
+    const { key, anomaly } = missionContaining('cause_bus_short');
+    const state = stateWith([{ ...anomaly, applied: [] }]);
+    applyMeasure(state, graph, settings, 42, key, anomaly.id, 'measure_loads_off', anomaly.onsetTick + 5);
+    withSettings(state, anomaly.escalationTick);
+    expect(state.anomalies).toHaveLength(1);
+  });
+
+  it('leaves the graph with no dead ends — every root cause names a target', () => {
+    for (const causeId of graph.causeIds) {
+      if (graph.cause(causeId).is_chain) continue;
+      expect(graph.escalationTarget(causeId)).not.toBeNull();
+    }
   });
 });

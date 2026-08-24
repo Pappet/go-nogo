@@ -158,7 +158,14 @@ export function stepDiagnosis(
   seed: number,
   missionKey: string,
   tick: number,
-  stepAnomalies: (state: AnomalyState, graph: CauseGraph, tick: number) => AnomalyEvent[],
+  stepAnomalies: (
+    state: AnomalyState,
+    graph: CauseGraph,
+    tick: number,
+    settings?: AnomalySettings,
+    seed?: number,
+    missionKey?: string,
+  ) => AnomalyEvent[],
 ): DiagnosisTickResult {
   const events: AnomalyEvent[] = [];
   const results: DiagnosisResult[] = [];
@@ -188,7 +195,7 @@ export function stepDiagnosis(
     }
   }
 
-  events.push(...stepAnomalies(state.anomalies, graph, tick));
+  events.push(...stepAnomalies(state.anomalies, graph, tick, anomalySettings, seed, missionKey));
 
   // Auto-pause once per new anomaly — on the tick the player could first
   // *see* it, not on the invisible onset. Stopping the clock at onset hands

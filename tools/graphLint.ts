@@ -30,6 +30,8 @@ export interface MeasureRef { measure: string; side_effect?: string; }
 export interface CauseDef {
     title: string;
     symptoms: string[];
+    /** Cause that takes over when this one is left past its window (§5.3). */
+    escalates_to?: string;
     /** Escalation window for this cause in sim seconds. */
     escalation_s?: number;
     context_priors?: string[];
@@ -229,10 +231,22 @@ export function lintGraph(data: GraphData): LintResult {
             err(`Design: diagnosis '${mId}' discriminates nothing — it is useless to the player.`);
         }
     }
+    // Escalation targets must exist, and must be chains.
+    for (const causeId of causeIds) {
+        const target = data.causes[causeId].escalates_to;
+        if (target === undefined) continue;
+        if (!data.causes[target]) {
+            err(`Integrity: cause '${causeId}' escalates into unknown cause '${target}'.`);
+        } else if (!data.causes[target].is_chain) {
+            warn(`Design: escalation target '${target}' of '${causeId}' is not marked is_chain.`);
+        }
+    }
+
     // Every chain cause must be reachable through some side_effect.
-    const sideEffectTargets = new Set(
-        causeIds.flatMap(id => data.causes[id].incorrect_measures.map(im => im.side_effect)).filter(Boolean) as string[],
-    );
+    const sideEffectTargets = new Set([
+        ...causeIds.flatMap(id => data.causes[id].incorrect_measures.map(im => im.side_effect)),
+        ...causeIds.map(id => data.causes[id].escalates_to),
+    ].filter(Boolean) as string[]);
     for (const causeId of causeIds) {
         if (data.causes[causeId].is_chain && !sideEffectTargets.has(causeId)) {
             err(`Integrity: chain cause '${causeId}' is never triggered by any side_effect (dead data).`);
@@ -278,6 +292,25 @@ export function lintGraph(data: GraphData): LintResult {
         report.push(`${causeId}: ${diag}${plan.resolution} (${data.measures[plan.resolution].duration_s}s) = ${plan.total}s / window ${window}s`);
         if (plan.total > window) {
             err(`Rule 4: cause '${causeId}' unsolvable in ${window}s — best plan needs ${plan.total}s (${diag}${plan.resolution}).`);
+        }
+    }
+
+    // ---- Rule 6: a symptom *set* must not identify a cause for free ----
+    // Rule 2 protects single symptoms. It cannot see that a cause may be the
+    // only one explaining its whole set — and once every symptom is on screen,
+    // that names the cause without the player paying for a diagnosis. Reported
+    // rather than failed: fixing it means adding symptoms, which is content
+    // design and bumps against the 1–3 symptoms per cause of §5.1.
+    for (const causeId of causeIds) {
+        if (data.causes[causeId].is_chain) continue;
+        const needed = data.causes[causeId].symptoms;
+        const explainers = causeIds.filter(other =>
+            needed.every(s => data.causes[other].symptoms.includes(s)));
+        if (explainers.length === 1) {
+            warn(
+                `Rule 6: the full symptom set of '${causeId}' is explained by no other cause — ` +
+                `waiting for every reading identifies it without paying for a diagnosis.`,
+            );
         }
     }
 

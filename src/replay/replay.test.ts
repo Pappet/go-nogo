@@ -99,12 +99,20 @@ describe('replay fixture (seed 42)', () => {
     expect(`${result.finalTick}:${result.finalHash}`).toBe(`${recorded.tick}:${recorded.sha256}`);
   });
 
-  it('reaches orbit — the run is a real flight, not an empty one', () => {
+  it('is a real flight that goes wrong — not an empty one', () => {
+    // The command log launches and then never touches the anomalies, so they
+    // run their windows out and cascade. That makes this a stronger
+    // determinism fixture than a clean ascent: escalation, chain spawning and
+    // the loss of the vehicle all have to reproduce bit for bit.
     const result = playRun(fixture, config, RUN_LENGTH_TICKS);
     expect(result.state.flight.ignited).toBe(true);
-    expect(result.state.flight.separated).toBe(true);
-    expect(result.state.flight.cutoff).toBe(true);
-    expect(result.state.phase).toBe('ORBIT_CHECK');
+    expect(result.state.missionLost).toBe(true);
+    // Lost at T+122 s, which is before staging would have happened — the
+    // cascade ends the flight rather than the flight ending the cascade.
+    expect(result.state.flight.separated).toBe(false);
+    expect(
+      result.state.events.filter((event) => event.type === 'ANOMALY_CHAIN').length,
+    ).toBeGreaterThan(0);
   });
 
   it('detects a tampered hash and localises it to its 30-second window', () => {

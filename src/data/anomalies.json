@@ -11,6 +11,6 @@
   },
   "symptomDelay_s": {
     "min": 0,
-    "max": 12
+    "max": 40
   }
 }

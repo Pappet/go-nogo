@@ -80,6 +80,8 @@ export interface MissionState {
   events: MissionEvent[];
   /** Dynamic pressure at the previous tick, for detecting the max-Q peak. */
   previousDynamicPressure_Pa: number;
+  /** True once a cascade ran out of chain to escalate into. */
+  missionLost: boolean;
   /** Everything the anomaly and diagnosis systems own (Phase 1). */
   diagnosis: DiagnosisState;
   /**
@@ -119,6 +121,7 @@ export function createMissionState(config: MissionConfigInput): MissionState {
     ignitionTick: -1,
     events: [],
     previousDynamicPressure_Pa: 0,
+    missionLost: false,
     diagnosis: createDiagnosisState(
       createPauseState(config.pauseModel ?? 'standard'),
       rollMissionContext(config.priorSettings, config.seed, config.missionKey),
@@ -297,6 +300,12 @@ export function createMissionSimulation(config: MissionConfigInput): Simulation<
       // have; the symptom entries are what they actually see.
       if (event.type === 'ONSET') continue;
       record(state, tick, `ANOMALY_${event.type}`, event.detail);
+      if (event.type === 'LOST') {
+        // The vehicle is gone. Cutting thrust is the honest consequence: a
+        // flameout does not keep pushing.
+        state.missionLost = true;
+        state.flight.cutoff = true;
+      }
     }
     for (const result of outcome.results) {
       const measure = config.causeGraph.measure(result.measureId).title;

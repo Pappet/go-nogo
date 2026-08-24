@@ -38,6 +38,8 @@ export interface CauseDef {
   /** Escalation window in sim seconds. */
   readonly escalation_s?: number;
   readonly context_priors?: readonly string[];
+  /** Cause that takes over when this one runs past its window (§5.3). */
+  readonly escalates_to?: string;
   readonly correct_measures: readonly string[];
   readonly incorrect_measures: readonly MeasureRef[];
   /** Chains are cascade announcements: unambiguous by design. */
@@ -169,6 +171,11 @@ export class CauseGraph {
     return this.cause(causeId).correct_measures.includes(measureId);
   }
 
+  /** What an unattended anomaly turns into, or null when it ends the mission. */
+  escalationTarget(causeId: string): string | null {
+    return this.cause(causeId).escalates_to ?? null;
+  }
+
   /** The chain a wrong measure sets off, or null if it merely fails (§5.3). */
   sideEffectOf(causeId: string, measureId: string): string | null {
     const wrong = this.cause(causeId).incorrect_measures.find((entry) => entry.measure === measureId);
@@ -212,7 +219,7 @@ export function buildSymptomInstances(
   missionKey: string,
   causeId: string,
 ): SymptomInstance[] {
-  return graph.cause(causeId).symptoms.map((symptomId) => {
+  const drawn = graph.cause(causeId).symptoms.map((symptomId) => {
     const key = `${missionKey}/${causeId}/${symptomId}`;
     return {
       symptomId,
@@ -221,13 +228,25 @@ export function buildSymptomInstances(
         bands.symptomStrength.min,
         bands.symptomStrength.max,
       ),
-      delay_s: scale(
+      rawDelay_s: scale(
         hashUnit(seed, key, 'symptomDelay'),
         bands.symptomDelay_s.min,
         bands.symptomDelay_s.max,
       ),
     };
   });
+
+  // Shift so the earliest reading lands at zero. Two things depend on it: the
+  // crisis has to announce itself promptly (the auto-pause waits for the first
+  // visible symptom), and the *spread* between first and last is what makes
+  // waiting for the full picture expensive. Drawing an absolute delay would
+  // sometimes leave the player staring at nothing for half the window.
+  const earliest = Math.min(...drawn.map((entry) => entry.rawDelay_s));
+  return drawn.map((entry) => ({
+    symptomId: entry.symptomId,
+    strength: entry.strength,
+    delay_s: entry.rawDelay_s - earliest,
+  }));
 }
 
 // ---------- Loading ----------

@@ -44,6 +44,7 @@
           "side_effect": "chain_flameout"
         }
       ],
+      "escalates_to": "chain_flameout",
       "escalation_s": 55
     },
     "cause_prop_leak": {
@@ -66,6 +67,7 @@
           "side_effect": "chain_flameout"
         }
       ],
+      "escalates_to": "chain_flameout",
       "escalation_s": 55
     },
     "cause_sensor_defective": {
@@ -87,6 +89,7 @@
           "side_effect": "chain_icing"
         }
       ],
+      "escalates_to": "chain_icing",
       "escalation_s": 45
     },
     "cause_bus_short": {
@@ -108,6 +111,7 @@
           "side_effect": "chain_flameout"
         }
       ],
+      "escalates_to": "chain_icing",
       "escalation_s": 60
     },
     "chain_icing": {

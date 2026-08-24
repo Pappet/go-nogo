@@ -102,6 +102,7 @@ export function encodeMissionState(state: MissionState, writer: CanonicalWriter)
   writer.int32(state.ignitionTick, 'ignitionTick');
   writer.int32(state.events.length, 'events.length');
   writer.float64(state.previousDynamicPressure_Pa, 'previousDynamicPressure_Pa');
+  writer.boolean(state.missionLost);
   writer.boolean(state.pauseRequested);
   encodeDiagnosisState(state.diagnosis, writer);
   encodeFlightState(state.flight, writer);

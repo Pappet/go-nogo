@@ -149,7 +149,7 @@ export function ticksToEscalation(anomaly: Anomaly, tick: number): number {
 }
 
 export interface AnomalyEvent {
-  readonly type: 'ONSET' | 'SYMPTOM' | 'ESCALATED' | 'RESOLVED' | 'CHAIN';
+  readonly type: 'ONSET' | 'SYMPTOM' | 'ESCALATED' | 'RESOLVED' | 'CHAIN' | 'LOST';
   readonly anomalyId: string;
   readonly tick: number;
   readonly detail: string;
@@ -165,6 +165,9 @@ export function stepAnomalies(
   state: AnomalyState,
   graph: CauseGraph,
   tick: number,
+  settings?: AnomalySettings,
+  seed = 0,
+  missionKey = '',
 ): AnomalyEvent[] {
   const events: AnomalyEvent[] = [];
 
@@ -204,6 +207,28 @@ export function stepAnomalies(
         tick,
         detail: 'Escalation window closed without a fix',
       });
+
+      // An unattended fault does not merely expire — it becomes the next one
+      // (§5.3). A chain with nothing left to escalate into is the end of the
+      // mission, which is what makes doing nothing the worst option rather
+      // than a neutral one.
+      const target = graph.escalationTarget(anomaly.causeId);
+      if (target !== null && settings !== undefined) {
+        const chain = spawnChain(state, graph, settings, seed, missionKey, anomaly, target, tick);
+        events.push({
+          type: 'CHAIN',
+          anomalyId: chain.id,
+          tick,
+          detail: `Unattended: ${graph.cause(anomaly.causeId).title} → ${graph.cause(target).title}`,
+        });
+      } else if (target === null) {
+        events.push({
+          type: 'LOST',
+          anomalyId: anomaly.id,
+          tick,
+          detail: `Mission lost: ${graph.cause(anomaly.causeId).title}`,
+        });
+      }
     }
   }
 
