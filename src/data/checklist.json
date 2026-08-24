@@ -1,0 +1,11 @@
+{
+  "description": "Pre-launch checklist. Every item must read GO before the vehicle can be armed.",
+  "items": [
+    { "id": "propellant", "label": "PROPELLANT LOAD", "hotkey": "1" },
+    { "id": "guidance", "label": "GUIDANCE ALIGN", "hotkey": "2" },
+    { "id": "telemetry", "label": "TELEMETRY LOCK", "hotkey": "3" },
+    { "id": "range", "label": "RANGE CLEAR", "hotkey": "4" },
+    { "id": "terminal", "label": "TERMINAL COUNT", "hotkey": "5" }
+  ],
+  "countdownSeconds": 10
+}

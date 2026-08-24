@@ -41,7 +41,8 @@ If a task appears to need any of these → stop and ask.
 Inside `src/sim/**` this holds absolutely:
 
 1. **NEVER** `Math.random`, `Date`, `performance.now()`, `setTimeout`/`setInterval` or any other wall-clock access.
-2. **NEVER** `Math.sin/cos/tan/atan2/exp/log/pow` – these are not bit-identical across engines. Transcendental functions come exclusively from `sim/math.ts` (own implementation with pinned test vectors). Still allowed: `Math.sqrt`, `abs`, `floor`, `ceil`, `round`, `trunc`, `min`, `max`, `sign`.
+2. **NEVER** `Math.sin/cos/tan/atan2/exp/log/pow` – these are not bit-identical across engines. Transcendental functions come exclusively from `sim/math.ts` (own implementation with pinned test vectors). Still allowed: `Math.sqrt`, `abs`, `floor`, `ceil`, `round`, `trunc`, `min`, `max`, `sign`, `imul`.
+   The test for this rule is not "is it on `Math`" but "does the language pin the result down". `Math.imul` is a 32-bit integer multiply the spec defines exactly, which is why the RNG uses it and why it is the opposite case to `Math.sin`. Anything not on the allowed list stays out until someone can point at the same guarantee.
 3. **Time = integer ticks**, DT = 50 ms fixed. Time warp = more ticks per frame (numerical mode, max 4×) or analytical Kepler evaluation at t (coast). **Never scale dt.**
 4. **All inputs are tick-stamped commands** through the queue. The UI never mutates sim state directly; `src/sim/` imports nothing from `src/ui/`.
 5. **RNG on two tracks:** `hash64(seed, key, context)` for everything tied to configuration; separate `mulberry32` streams per system for event sequences. hash64 = 2×32-bit lane mixing (xmur3/cyrb53 family, no BigInt in the hot path). Test vectors are pinned – every change to the hash is a breaking change.

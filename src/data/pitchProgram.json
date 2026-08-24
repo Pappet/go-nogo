@@ -1,0 +1,17 @@
+{
+  "description": "Pitch angle above the local horizon, interpolated linearly between nodes. 90 deg is straight up.",
+  "nodes": [
+    { "time_s": 0, "pitch_deg": 90 },
+    { "time_s": 10, "pitch_deg": 90 },
+    { "time_s": 20, "pitch_deg": 84 },
+    { "time_s": 40, "pitch_deg": 72 },
+    { "time_s": 60, "pitch_deg": 60 },
+    { "time_s": 90, "pitch_deg": 47 },
+    { "time_s": 120, "pitch_deg": 36 },
+    { "time_s": 160, "pitch_deg": 26 },
+    { "time_s": 220, "pitch_deg": 16 },
+    { "time_s": 300, "pitch_deg": 8 },
+    { "time_s": 400, "pitch_deg": 2 },
+    { "time_s": 520, "pitch_deg": 0 }
+  ]
+}

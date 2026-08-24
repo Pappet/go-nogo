@@ -1,0 +1,33 @@
+{
+  "name": "GN-1 Vanguard",
+  "description": "Hard-wired two-stage launcher for Phase 0. Small-lift class, 1.4 t to LEO.",
+  "payloadMass_kg": 1400,
+  "referenceArea_m2": 4.5,
+  "dragCoefficient": 0.32,
+  "maxDynamicPressure_Pa": 40000,
+  "stageSeparationDelay_s": 3.5,
+  "stages": [
+    {
+      "name": "Stage 1",
+      "dryMass_kg": 4500,
+      "propellantMass_kg": 46200,
+      "thrustSeaLevel_N": 880000,
+      "thrustVacuum_N": 960000,
+      "ispSeaLevel_s": 283,
+      "ispVacuum_s": 311
+    },
+    {
+      "name": "Stage 2",
+      "dryMass_kg": 1200,
+      "propellantMass_kg": 11600,
+      "thrustSeaLevel_N": 112000,
+      "thrustVacuum_N": 130000,
+      "ispSeaLevel_s": 320,
+      "ispVacuum_s": 348
+    }
+  ],
+  "targetOrbit": {
+    "periapsisAltitude_m": 200000,
+    "apoapsisAltitude_m": 250000
+  }
+}
