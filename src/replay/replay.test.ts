@@ -17,7 +17,8 @@ import { describe, expect, it } from 'vitest';
 
 import { createMissionConfig } from '../missionConfig.js';
 import { createMissionState } from '../sim/countdown.js';
-import type { Command } from '../sim/engine.js';
+import { TICKS_PER_SECOND, type Command } from '../sim/engine.js';
+import { buildMissionReport, verdictLine } from '../sim/diagnosis/postMortem.js';
 
 import { HASH_INTERVAL_TICKS, play, playRun, verifyRun } from './playback.js';
 import {
@@ -60,7 +61,7 @@ function recordRun(): Run {
     gameVersion: GAME_VERSION,
     dataVersion: computeDataVersion(config.rocket, config.pitchProgram, config.checklist),
     seed: SEED,
-    configuration: { rocketName: config.rocket.name },
+    configuration: { rocketName: config.rocket.name, missionKey: config.missionKey },
     commands: COMMANDS,
     stateHashes: result.hashes,
   };
@@ -113,6 +114,33 @@ describe('replay fixture (seed 42)', () => {
     expect(
       result.state.events.filter((event) => event.type === 'ANOMALY_CHAIN').length,
     ).toBeGreaterThan(0);
+  });
+
+  it('reports on the flight the fixture actually flew', () => {
+    // The post-mortem's claim is that it cannot drift from what happened,
+    // because it derives everything from state the simulation already holds.
+    // Building it from the fixture run is the test of that claim: the report
+    // has to agree with a flight nobody wrote it against.
+    const result = playRun(fixture, config, RUN_LENGTH_TICKS);
+    const report = buildMissionReport(
+      config.causeGraph,
+      result.state.diagnosis.anomalies,
+      result.state.diagnosis.results,
+      result.state.missionLost,
+      0.11,
+      TICKS_PER_SECOND,
+    );
+
+    expect(report.lost).toBe(true);
+    // Nobody diagnosed and nobody acted, so every anomaly is untouched.
+    expect(report.diagnosesBought).toBe(0);
+    expect(report.wrongMeasures).toBe(0);
+    expect(report.untouched).toBe(report.anomalies.length);
+    expect(report.anomalies.some((entry) => entry.verdict === 'escalated')).toBe(true);
+    // A cascade means at least one anomaly names what it came out of.
+    expect(report.anomalies.some((entry) => entry.chain.length > 1)).toBe(true);
+    expect(verdictLine(report)).toContain('Risk accepted: 11 %');
+    expect(verdictLine(report)).toContain('Vehicle lost');
   });
 
   it('detects a tampered hash and localises it to its 30-second window', () => {

@@ -3,7 +3,8 @@
   "dataVersion": "c51bc44dc734219b1eeacb42dfcd2a5b7837e781f35fecf2797e8a99969c5beb",
   "seed": 42,
   "configuration": {
-    "rocketName": "GN-1 Vanguard"
+    "rocketName": "GN-1 Vanguard",
+    "missionKey": "mission-1"
   },
   "commands": [
     {

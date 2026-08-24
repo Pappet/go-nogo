@@ -15,17 +15,35 @@
     consoleHotkey,
     resolveHotkey,
   } from '../hotkeys.js';
-  import { isMuted, setMuted, unlockAudio } from '../audio/synth.js';
+  import { setMuted, unlockAudio } from '../audio/synth.js';
   import { formatMissionClock } from '../format.js';
   import SevenSeg from '../widgets/SevenSeg.svelte';
   import EngineeringConsole from './engineering/EngineeringConsole.svelte';
   import LaunchConsole from './launch/LaunchConsole.svelte';
+  import PostMortemConsole from './postmortem/PostMortemConsole.svelte';
 
   const mission = new Mission();
   const telemetry = $derived(mission.telemetry);
 
   let muted = $state(false);
-  let resumed = $state(false);
+
+  /**
+   * The POST-MORTEM is console ⑥ in §7, and §7.7 only hands out keys 1–5 — so
+   * it has no number and cannot be reached while the flight is running. It
+   * opens itself the moment the mission has an outcome, and the player can
+   * step back to the other consoles to look at where the vehicle ended up.
+   */
+  let showReport = $state(false);
+  let wasOver = false;
+  $effect(() => {
+    // Only the transition opens it. Reacting to the flag itself would reopen
+    // the report every frame and pin the player to it.
+    const over = telemetry.missionOver;
+    if (over !== wasOver) {
+      wasOver = over;
+      showReport = over;
+    }
+  });
 
   /** Consoles that exist in this phase. The rest are drawn, but inert. */
   const AVAILABLE: readonly ConsoleSlot[] = ['launch', 'engineering'];
@@ -38,7 +56,7 @@
   };
 
   onMount(() => {
-    resumed = mission.resume();
+    mission.resume();
     mission.start();
 
     const onVisibility = (): void => {
@@ -62,9 +80,12 @@
 
     switch (action.kind) {
       case 'switchConsole':
+        showReport = false;
         mission.switchConsole(action.slot);
         return;
       case 'panelAction':
+        // Nothing on the post-mortem is commandable: the flight is over.
+        if (showReport) return;
         // The focused console decides what its panel actions are: checklist
         // switches in LAUNCH, diagnosis measures in ENGINEERING.
         if (telemetry.console === 'launch') {
@@ -87,6 +108,7 @@
         mission.switchConsole('launch');
         return;
       case 'confirm':
+        if (showReport) return;
         if (telemetry.console === 'launch') mission.arm();
         else mission.acceptResultOffer();
         return;
@@ -108,9 +130,7 @@
   }
 
   function restart(): void {
-    mission.clearSave();
-    mission.reset();
-    resumed = false;
+    mission.retrySameMission();
   }
 
   /** Diagnoses that can still narrow the field — these carry the hotkeys. */
@@ -129,7 +149,7 @@
   <header class="masthead">
     <div class="identity">
       <h1>GO<span>/</span>NOGO</h1>
-      <p>{LABELS[telemetry.console]} · GN-1 VANGUARD</p>
+      <p>{showReport ? 'POST-MORTEM' : LABELS[telemetry.console]} · GN-1 VANGUARD</p>
     </div>
 
     <div class="clock">
@@ -156,7 +176,7 @@
     </div>
   </header>
 
-  {#if resumed}
+  {#if telemetry.resumedFromSave}
     <p class="notice">Resumed from the last auto-save.</p>
   {/if}
 
@@ -173,15 +193,30 @@
         class="tab"
         class:active={telemetry.console === slot}
         disabled={!AVAILABLE.includes(slot)}
-        onclick={() => mission.switchConsole(slot)}
+        onclick={() => {
+          showReport = false;
+          mission.switchConsole(slot);
+        }}
       >
         <span class="key">{consoleHotkey(index)}</span>
         {LABELS[slot]}
       </button>
     {/each}
+    <button
+      type="button"
+      class="tab"
+      class:active={showReport}
+      disabled={!telemetry.missionOver}
+      onclick={() => (showReport = true)}
+    >
+      <span class="key">·</span>
+      POST-MORTEM
+    </button>
   </nav>
 
-  {#if telemetry.console === 'engineering'}
+  {#if showReport}
+    <PostMortemConsole {mission} />
+  {:else if telemetry.console === 'engineering'}
     <EngineeringConsole {mission} />
   {:else}
     <LaunchConsole {mission} />

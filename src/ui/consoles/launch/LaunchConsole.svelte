@@ -7,7 +7,13 @@
    * The masthead, the tab bar and the keyboard live in the shell, so this file
    * is only the panels.
    */
-  import { Mission, checklistItems, maxDynamicPressureLimit_Pa, targetOrbit } from '../../mission.svelte.js';
+  import {
+    Mission,
+    checklistItems,
+    maxDynamicPressureLimit_Pa,
+    risk,
+    targetOrbit,
+  } from '../../mission.svelte.js';
   import { panelActionHotkey } from '../../hotkeys.js';
   import {
     formatAltitude,
@@ -79,6 +85,24 @@
         {launchButtonLabel}
         {#if telemetry.phase === 'HOLD'}<kbd>Enter</kbd>{/if}
       </button>
+
+      {#if telemetry.phase === 'HOLD' || telemetry.phase === 'ARMED'}
+        <div class="risk">
+          <h3>
+            RISK BUDGET
+            <span class="total">{(risk.lossOfMission * 100).toFixed(1)} % LOM</span>
+          </h3>
+          <ul>
+            {#each risk.lines as line (line.label)}
+              <li>
+                <span>{line.label}</span>
+                <span class="value">{(line.contribution * 100).toFixed(1)} %</span>
+              </li>
+            {/each}
+          </ul>
+          <p>Static this phase — the same number every flight, and the post-mortem quotes it back.</p>
+        </div>
+      {/if}
     </section>
 
     <section class="panel telemetry">
@@ -160,6 +184,59 @@
     grid-template-rows: 1fr auto;
     gap: 0.9rem;
     min-height: 0;
+  }
+
+  .risk {
+    margin-top: 0.85rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    padding-top: 0.6rem;
+  }
+
+  .risk h3 {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.6rem;
+    margin: 0 0 0.45rem;
+    font-size: 0.56rem;
+    letter-spacing: 0.22em;
+    opacity: 0.5;
+  }
+
+  .risk .total {
+    font-size: 0.78rem;
+    letter-spacing: 0.08em;
+    color: #ffc25c;
+    opacity: 1;
+  }
+
+  .risk ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.22rem;
+  }
+
+  .risk li {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.8rem;
+    font-size: 0.62rem;
+    opacity: 0.72;
+  }
+
+  .risk .value {
+    color: #ffc25c;
+    opacity: 0.85;
+  }
+
+  .risk p {
+    margin: 0.5rem 0 0;
+    font-size: 0.56rem;
+    line-height: 1.5;
+    opacity: 0.35;
   }
 
   .panel {
