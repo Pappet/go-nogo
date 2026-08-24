@@ -147,6 +147,7 @@
       "type": "diagnosis",
       "duration_s": 10,
       "occupies": [
+        "channel:any",
         "channel:any"
       ],
       "discriminates": [
@@ -158,7 +159,8 @@
       "type": "diagnosis",
       "duration_s": 45,
       "occupies": [
-        "engineer:prop"
+        "engineer:prop",
+        "channel:any"
       ],
       "discriminates": [
         "cause_valve_sluggish"
@@ -169,7 +171,8 @@
       "type": "diagnosis",
       "duration_s": 45,
       "occupies": [
-        "engineer:avionics"
+        "engineer:avionics",
+        "channel:any"
       ],
       "discriminates": [
         "cause_bus_short"
@@ -219,6 +222,10 @@
     }
   },
   "_resources": {
-    "channel:any": 1
+    "channel:any": 4,
+    "engineer:prop": 1,
+    "engineer:avionics": 1,
+    "flightcomputer:slot1": 1,
+    "fuel_line:main": 1
   }
 }

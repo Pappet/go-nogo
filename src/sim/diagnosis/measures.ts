@@ -21,7 +21,14 @@
  */
 import { TICKS_PER_SECOND } from '../engine.js';
 
-/** What the scheduler needs to know about a measure. The graph supplies it. */
+/**
+ * What the scheduler needs to know about a measure. The graph supplies it.
+ *
+ * A token may appear more than once in `occupies`: that is how a measure asks
+ * for more than one slot of a pooled resource. A raw-telemetry cross-check
+ * eating two of the four channels is the difference between a channel matrix
+ * that means something and one that is decoration.
+ */
 export interface MeasureSpec {
   readonly id: string;
   readonly duration_s: number;
@@ -82,16 +89,26 @@ function usedSlots(
   return used;
 }
 
+/** How many slots of `resource` this measure asks for. */
+function slotsNeeded(spec: MeasureSpec, resource: string): number {
+  let needed = 0;
+  for (const held of spec.occupies) {
+    if (held === resource) needed += 1;
+  }
+  return needed;
+}
+
 function canStart(
   spec: MeasureSpec,
   running: readonly RunningMeasure[],
   specs: ReadonlyMap<string, MeasureSpec>,
   capacities: ResourceCapacities,
 ): boolean {
-  // A measure needing the same token twice would deadlock against itself; the
-  // graph does not express that, so each token is counted once.
   for (const resource of spec.occupies) {
-    if (usedSlots(resource, running, specs) + 1 > capacityOf(capacities, resource)) {
+    const needed = slotsNeeded(spec, resource);
+    // A measure asking for more slots than exist would wait forever; that is a
+    // data error, and the graph linter is where it belongs.
+    if (usedSlots(resource, running, specs) + needed > capacityOf(capacities, resource)) {
       return false;
     }
   }

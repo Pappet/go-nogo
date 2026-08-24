@@ -300,19 +300,64 @@ describe('against the shipped cause graph', () => {
     expect(makespanTicks(projection, 0)).toBe(seconds(45));
   });
 
-  it('shows the channel capacity does not bind in this graph', () => {
-    // Only one diagnosis occupies a channel, so raising the capacity changes
-    // nothing. Recorded as a test because it is a property of the *data*, and
-    // a future graph that adds channel-bound diagnoses should break it.
-    const state = () => {
+  it('needs every one of the four channels, and gains nothing from a fifth', () => {
+    // The channel matrix is load-bearing, not decoration: take a channel away
+    // and the hardest cause stops fitting its window; add one and nothing
+    // improves. A graph edit that breaks either half of that breaks this test.
+    const fullDiagnosis = () => {
       const fresh = createScheduleState();
       enqueueMeasure(fresh, 'measure_diag_crosscheck', 0);
       enqueueMeasure(fresh, 'measure_diag_team_prop', 0);
       enqueueMeasure(fresh, 'measure_diag_team_avionics', 0);
       return fresh;
     };
-    const withOne = makespanTicks(projectSchedule(state(), 0, specs, { 'channel:any': 1 }), 0);
-    const withFour = makespanTicks(projectSchedule(state(), 0, specs, { 'channel:any': 4 }), 0);
-    expect(withFour).toBe(withOne);
+    const makespanWith = (channels: number): number =>
+      makespanTicks(
+        projectSchedule(fullDiagnosis(), 0, specs, { ...capacities, 'channel:any': channels }),
+        0,
+      );
+
+    expect(makespanWith(4)).toBe(seconds(45));
+    expect(makespanWith(3)).toBeGreaterThan(seconds(45));
+    expect(makespanWith(5)).toBe(makespanWith(4));
+  });
+
+  it('saturates the bandwidth while all three diagnoses run', () => {
+    // Two channels for the raw-telemetry cross-check plus one per team loop is
+    // exactly four — the player can see the matrix full.
+    const state = createScheduleState();
+    for (const id of [
+      'measure_diag_crosscheck',
+      'measure_diag_team_prop',
+      'measure_diag_team_avionics',
+    ]) {
+      enqueueMeasure(state, id, 0);
+    }
+    advanceSchedule(state, 0, specs, capacities);
+    expect(state.running).toHaveLength(3);
+
+    const channelsInUse = state.running
+      .flatMap((active) => specs.get(active.measureId)?.occupies ?? [])
+      .filter((resource) => resource === 'channel:any').length;
+    expect(channelsInUse).toBe(4);
+    expect(channelsInUse).toBe(capacities['channel:any']);
+  });
+
+  it('makes a fourth action wait until the cross-check releases its bandwidth', () => {
+    // "Information costs bandwidth": you cannot act while you are still
+    // measuring everything.
+    const state = createScheduleState();
+    for (const id of [
+      'measure_diag_crosscheck',
+      'measure_diag_team_prop',
+      'measure_diag_team_avionics',
+      'measure_iso_valve',
+    ]) {
+      enqueueMeasure(state, id, 0);
+    }
+    const projection = projectSchedule(state, 0, specs, capacities);
+    const valve = projection.find((entry) => entry.measureId === 'measure_iso_valve');
+    expect(valve?.startTick).toBe(seconds(10));
+    expect(valve?.waiting).toBe(true);
   });
 });

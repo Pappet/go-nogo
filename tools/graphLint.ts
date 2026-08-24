@@ -77,13 +77,32 @@ export function scheduleMakespan(
     data: GraphData,
 ): number {
     const capacities = data._resources ?? {};
-    // Per resource: sorted list of busy-until times, one entry per occupied slot.
-    const busy: Record<string, number[]> = {};
-    const slots = (res: string) => {
-        if (!busy[res]) busy[res] = [];
-        return busy[res];
-    };
     const capacity = (res: string) => capacities[res] ?? 1;
+
+    // One entry per slot, holding the time that slot frees up. Fixed length,
+    // because a resource has as many slots as its capacity and no more.
+    const slotsByResource: Record<string, number[]> = {};
+    const slotsOf = (res: string) => {
+        if (!slotsByResource[res]) {
+            slotsByResource[res] = new Array<number>(capacity(res)).fill(0);
+        }
+        return slotsByResource[res];
+    };
+
+    /**
+     * How many slots of each resource a measure needs. A token repeated in
+     * `occupies` is a request for that many slots — a raw-telemetry check
+     * eating two of four channels, say. Counting the repeats separately
+     * against the current state (rather than as one combined demand) would
+     * let a two-slot measure start with one slot free.
+     */
+    const demandOf = (id: string): Map<string, number> => {
+        const demand = new Map<string, number>();
+        for (const res of data.measures[id].occupies) {
+            demand.set(res, (demand.get(res) ?? 0) + 1);
+        }
+        return demand;
+    };
 
     const tasks = [...measureIds].sort(
         (a, b) => data.measures[b].duration_s - data.measures[a].duration_s,
@@ -92,21 +111,25 @@ export function scheduleMakespan(
     let makespan = 0;
     for (const id of tasks) {
         const m = data.measures[id];
-        // Earliest start: for each resource, the time a slot frees up.
+        const demand = demandOf(id);
+
+        // Earliest start: for each resource, the moment the n-th slot is free.
         let start = 0;
-        for (const res of m.occupies) {
-            const s = slots(res);
-            if (s.length < capacity(res)) continue;          // free slot now
-            start = Math.max(start, Math.min(...s));         // wait for earliest slot
+        for (const [res, needed] of demand) {
+            const free = [...slotsOf(res)].sort((a, b) => a - b);
+            if (needed > free.length) return Number.POSITIVE_INFINITY; // impossible
+            start = Math.max(start, free[needed - 1]);
         }
-        // Occupy the slots.
-        for (const res of m.occupies) {
-            const s = slots(res);
-            if (s.length < capacity(res)) {
-                s.push(start + m.duration_s);
-            } else {
-                const i = s.indexOf(Math.min(...s));
-                s[i] = Math.max(s[i], start) + m.duration_s;
+
+        // Occupy that many slots, taking the ones that free up earliest.
+        for (const [res, needed] of demand) {
+            const slots = slotsOf(res);
+            for (let taken = 0; taken < needed; taken++) {
+                let earliest = 0;
+                for (let i = 1; i < slots.length; i++) {
+                    if (slots[i] < slots[earliest]) earliest = i;
+                }
+                slots[earliest] = start + m.duration_s;
             }
         }
         makespan = Math.max(makespan, start + m.duration_s);
