@@ -266,8 +266,8 @@ describe('parallel work under scarcity', () => {
       for (const result of step(state, key, tick).results) landings.set(result.measureId, tick);
     }
     expect(landings.get('measure_diag_crosscheck')).toBe(seconds(10));
-    expect(landings.get('measure_diag_team_prop')).toBe(seconds(45));
-    expect(landings.get('measure_diag_team_avionics')).toBe(seconds(45));
+    expect(landings.get('measure_diag_team_prop')).toBe(seconds(22));
+    expect(landings.get('measure_diag_team_avionics')).toBe(seconds(22));
   });
 
   it('makes a fourth action wait for bandwidth', () => {

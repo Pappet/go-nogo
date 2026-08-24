@@ -114,12 +114,15 @@ describe('the shipped graph', () => {
     expect(result.report).toHaveLength(Object.keys(graph.causes).length);
   });
 
-  it('becomes unsolvable if a channel is taken away', () => {
-    // The four channels are a real constraint, not a label on a widget.
-    const narrowed: GraphData = {
-      ...graph,
-      _resources: { ...graph._resources, 'channel:any': 3 },
-    };
-    expect(lintGraph(narrowed).errors.length).toBeGreaterThan(0);
+  it('pays a real penalty when a channel is taken away', () => {
+    // The four channels are a constraint, not a label on a widget. They stopped
+    // being pass-or-fail when the team queries were shortened; what they cost
+    // now is time, which is the currency the escalation window is priced in.
+    const plan = ['measure_diag_crosscheck', 'measure_diag_team_prop', 'measure_diag_team_avionics'];
+    const withChannels = (count: number): number =>
+      scheduleMakespan(plan, { ...graph, _resources: { ...graph._resources, 'channel:any': count } });
+
+    expect(withChannels(3)).toBeGreaterThan(withChannels(4));
+    expect(withChannels(5)).toBe(withChannels(4));
   });
 });

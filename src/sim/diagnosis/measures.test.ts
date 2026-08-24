@@ -297,7 +297,7 @@ describe('against the shipped cause graph', () => {
     enqueueMeasure(state, 'measure_diag_team_avionics', 0);
 
     const projection = projectSchedule(state, 0, specs, capacities);
-    expect(makespanTicks(projection, 0)).toBe(seconds(45));
+    expect(makespanTicks(projection, 0)).toBe(seconds(22));
   });
 
   it('needs every one of the four channels, and gains nothing from a fifth', () => {
@@ -317,8 +317,11 @@ describe('against the shipped cause graph', () => {
         0,
       );
 
-    expect(makespanWith(4)).toBe(seconds(45));
-    expect(makespanWith(3)).toBeGreaterThan(seconds(45));
+    // Since the team queries were shortened the four channels are no longer
+    // pass-or-fail — they cost time instead. A ten-second penalty against a
+    // 55-second window is still a constraint worth planning around.
+    expect(makespanWith(4)).toBe(seconds(22));
+    expect(makespanWith(3)).toBe(seconds(32));
     expect(makespanWith(5)).toBe(makespanWith(4));
   });
 

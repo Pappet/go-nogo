@@ -161,7 +161,7 @@
     "measure_diag_team_prop": {
       "title": "Ask Propulsion team",
       "type": "diagnosis",
-      "duration_s": 45,
+      "duration_s": 22,
       "occupies": [
         "engineer:prop",
         "channel:any"
@@ -173,7 +173,7 @@
     "measure_diag_team_avionics": {
       "title": "Ask Avionics team",
       "type": "diagnosis",
-      "duration_s": 45,
+      "duration_s": 22,
       "occupies": [
         "engineer:avionics",
         "channel:any"
