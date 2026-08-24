@@ -8,7 +8,7 @@
   import { onMount } from 'svelte';
 
   import { Mission, checklistItems, maxDynamicPressureLimit_Pa, targetOrbit } from '../../mission.svelte.js';
-  import { resolveHotkey } from '../../hotkeys.js';
+  import { panelActionHotkey, resolveHotkey } from '../../hotkeys.js';
   import { isMuted, setMuted, unlockAudio } from '../../audio/synth.js';
   import {
     formatAltitude,
@@ -56,10 +56,12 @@
     unlockAudio();
 
     switch (action.kind) {
-      case 'toggleChecklist':
+      case 'panelAction':
+        // In LAUNCH the panel actions are the checklist switches; §7.7 gives
+        // the same keys to the diagnosis measures in ENGINEERING.
         if (action.index < checklistItems.length) mission.toggleChecklist(action.index);
         return;
-      case 'arm':
+      case 'confirm':
         mission.arm();
         return;
       case 'togglePause':
@@ -70,6 +72,10 @@
         return;
       case 'warpDown':
         mission.warpDown();
+        return;
+      default:
+        // Console switching and panel focus have nothing to act on while
+        // LAUNCH is the only console; ENGINEERING gives them meaning.
         return;
     }
   }
@@ -149,7 +155,7 @@
         {#each checklistItems as item, index (item.id)}
           <ToggleSwitch
             label={item.label}
-            hotkey={item.hotkey}
+            hotkey={panelActionHotkey(index)}
             checked={telemetry.checklist[index]}
             disabled={telemetry.phase !== 'HOLD'}
             onToggle={() => mission.toggleChecklist(index)}

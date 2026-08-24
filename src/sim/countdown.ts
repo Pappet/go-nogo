@@ -71,7 +71,6 @@ export interface MissionState {
 export interface ChecklistItem {
   readonly id: string;
   readonly label: string;
-  readonly hotkey: string;
 }
 
 export interface ChecklistDef {
