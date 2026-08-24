@@ -1,0 +1,18 @@
+{
+  "description": "Context priors v1 (concept §5.2). A cause lists the context tags that make it more likely; this file says where those tags come from and how much they shift the odds.",
+  "matchBoost": 2.2,
+  "phaseTags": {
+    "LIFTOFF": ["high_vibration"],
+    "MAX_Q": ["max_q", "high_vibration"],
+    "MECO": ["high_vibration"],
+    "SEP": ["high_vibration"],
+    "ORBIT_CHECK": ["high_radiation"]
+  },
+  "missionTags": [
+    { "id": "cold_profile", "probability": 0.4 },
+    { "id": "old_serial_no", "probability": 0.35 },
+    { "id": "cheap_qa", "probability": 0.3 },
+    { "id": "high_radiation", "probability": 0.25 },
+    { "id": "micrometeorite", "probability": 0.15 }
+  ]
+}
