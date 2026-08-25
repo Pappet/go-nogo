@@ -255,3 +255,47 @@ describe('milestones follow the physics, not a schedule', () => {
     expect(engine.state.events.some((event) => event.type === 'MECO')).toBe(false);
   });
 });
+
+describe('a mission is pinned by its seed and its key', () => {
+  /**
+   * §5.4's first retry path promises the identical run, and §8.2 rule 5
+   * promises that a re-roll is surgical. Both rest on one property: the seed
+   * and the mission key decide the crisis, and nothing else does.
+   *
+   * This is asserted at the mission level rather than at `planAnomalies`,
+   * because that is the level Phase 2's configurator will rebuild. A test on
+   * the helper would keep passing while the mission it feeds changed shape.
+   */
+  function flyBriefly(overrides: Parameters<typeof createMissionConfig>[0]): MissionState {
+    const missionConfig = createMissionConfig(overrides);
+    const engine = new Engine(
+      createMissionSimulation(missionConfig),
+      createMissionState(missionConfig),
+    );
+    for (let index = 0; index < checklist.items.length; index += 1) {
+      engine.submit('toggleChecklist', { index });
+    }
+    engine.submit('arm', null);
+    engine.runTicks(6000);
+    return engine.state;
+  }
+
+  /** The anomalies a run produced, in the order the world announced them. */
+  const crisisOf = (state: MissionState): string[] =>
+    state.diagnosis.anomalies.anomalies.map(
+      (anomaly) => `${anomaly.causeId}@${anomaly.onsetTick}`,
+    );
+
+  it('replays the same crisis for the same seed and key', () => {
+    const first = flyBriefly({ seed: 42, missionKey: 'mission-1' });
+    const second = flyBriefly({ seed: 42, missionKey: 'mission-1' });
+    expect(crisisOf(second)).toEqual(crisisOf(first));
+    expect(crisisOf(first).length).toBeGreaterThan(0);
+  });
+
+  it('rolls a different crisis for a different key, and for a different seed', () => {
+    const base = crisisOf(flyBriefly({ seed: 42, missionKey: 'mission-1' }));
+    expect(crisisOf(flyBriefly({ seed: 42, missionKey: 'mission-2' }))).not.toEqual(base);
+    expect(crisisOf(flyBriefly({ seed: 43, missionKey: 'mission-1' }))).not.toEqual(base);
+  });
+});
