@@ -278,6 +278,17 @@ export function lintGraph(data: GraphData, options: LintOptions = {}): LintResul
     const warn = (m: string) => warnings.push(m);
 
     const causeIds = Object.keys(data.causes);
+
+    // Said once, up front, rather than left to Rule 6: a graph where no cause
+    // happens to be self-identifying would produce no Rule 6 output at all,
+    // and the run would look like a full pass while the timing check never
+    // happened. A linter must never quietly get weaker.
+    if (!options.globalDelayBand) {
+        warn(
+            'No global symptom delay band given — Rule 6 cannot measure timing and falls back ' +
+            'to reporting bare uniqueness. This run is weaker than a full one.',
+        );
+    }
     const measureIds = Object.keys(data.measures);
 
     // ---- Referential integrity (everything, loudly — no silent skips) ----
@@ -445,10 +456,14 @@ async function cli() {
     // The global band lives with the other runtime tuning, next to the graph.
     // Read rather than duplicated: a second copy of 0..40 here would drift.
     const anomaliesFile = path.join(path.dirname(resolved), 'anomalies.json');
-    const globalDelayBand = fs.existsSync(anomaliesFile)
-        ? (JSON.parse(fs.readFileSync(anomaliesFile, 'utf-8')) as { symptomDelay_s: DelayBand })
-              .symptomDelay_s
-        : undefined;
+    let globalDelayBand: DelayBand | undefined;
+    if (fs.existsSync(anomaliesFile)) {
+        globalDelayBand = (
+            JSON.parse(fs.readFileSync(anomaliesFile, 'utf-8')) as { symptomDelay_s: DelayBand }
+        ).symptomDelay_s;
+    } else {
+        console.warn(`Note: no ${anomaliesFile} next to the graph — see the warning below.\n`);
+    }
 
     const { errors, warnings, report } = lintGraph(data, { globalDelayBand });
 

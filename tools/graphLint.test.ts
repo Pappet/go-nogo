@@ -169,6 +169,24 @@ describe('rule 6 — waiting must not beat paying', () => {
     expect(warnings.join(' ')).toContain('Timing not checked');
   });
 
+  it('announces the weaker run even on a graph that gives Rule 6 nothing to say', () => {
+    // The failure mode this guards: no cause is self-identifying, so Rule 6
+    // stays silent, and a run with no timing check at all looks like a clean
+    // full pass. The linter has to declare its own reduced strength.
+    const noSelfIdentifying: GraphData = {
+      ...graph,
+      causes: { cause_valve_sluggish: graph.causes.cause_valve_sluggish },
+    };
+    const warnings = lintGraph(noSelfIdentifying).warnings;
+    expect(warnings.filter((entry) => entry.startsWith('Rule 6'))).toEqual([]);
+    expect(warnings.join(' ')).toContain('weaker than a full one');
+
+    // And it says nothing of the sort once it can actually measure.
+    expect(
+      lintGraph(noSelfIdentifying, { globalDelayBand }).warnings.join(' '),
+    ).not.toContain('weaker than a full one');
+  });
+
   it('agrees with the shift-to-zero the runtime does', () => {
     // Two symptoms drawn from the same band: the mean gap between the first
     // and the second is a third of the band's width. The linter walks
