@@ -8,9 +8,15 @@
  */
 import { describe, expect, it } from 'vitest';
 
+import anomalyData from '../src/data/anomalies.json' with { type: 'json' };
 import causesData from '../src/data/causes.json' with { type: 'json' };
 
-import { type GraphData, lintGraph, scheduleMakespan } from './graphLint.js';
+import {
+  type GraphData,
+  lintGraph,
+  meanFreeIdentification,
+  scheduleMakespan,
+} from './graphLint.js';
 
 /** A graph containing only what the scheduling tests need. */
 function graphWith(
@@ -124,5 +130,59 @@ describe('the shipped graph', () => {
 
     expect(withChannels(3)).toBeGreaterThan(withChannels(4));
     expect(withChannels(5)).toBe(withChannels(4));
+  });
+});
+
+describe('rule 6 — waiting must not beat paying', () => {
+  const graph = causesData as unknown as GraphData;
+  const globalDelayBand = anomalyData.symptomDelay_s;
+
+  it('measures the free path against the bought one on the shipped graph', () => {
+    const result = lintGraph(graph, { globalDelayBand });
+    expect(result.warnings.filter((entry) => entry.startsWith('Rule 6'))).toEqual([]);
+    // Every cause the readings can name on their own is accounted for, with
+    // the margin spelled out — that is the number a tuning pass moves.
+    expect(result.report.filter((entry) => entry.includes('paying wins by'))).toHaveLength(3);
+  });
+
+  it('fires again the moment the late reading is made early', () => {
+    // The guard on the balance: this is exactly the edit that reopened the
+    // hole, and it must not pass quietly.
+    const early: GraphData = {
+      ...graph,
+      symptoms: {
+        ...graph.symptoms,
+        sym_telemetry_gaps: { ...graph.symptoms.sym_telemetry_gaps, delay_s: undefined },
+      },
+    };
+    const warnings = lintGraph(early, { globalDelayBand }).warnings.filter((entry) =>
+      entry.startsWith('Rule 6'),
+    );
+    expect(warnings.length).toBeGreaterThan(0);
+    expect(warnings.join(' ')).toContain('waiting beats paying');
+  });
+
+  it('falls back to bare uniqueness when it is given no band to measure with', () => {
+    // A mod loader may not pass one. Saying less is right; saying nothing is not.
+    const warnings = lintGraph(graph).warnings.filter((entry) => entry.startsWith('Rule 6'));
+    expect(warnings.length).toBeGreaterThan(0);
+    expect(warnings.join(' ')).toContain('Timing not checked');
+  });
+
+  it('agrees with the shift-to-zero the runtime does', () => {
+    // Two symptoms drawn from the same band: the mean gap between the first
+    // and the second is a third of the band's width. The linter walks
+    // quantiles rather than sampling, so it should land on 40/3 within a
+    // rounding error — if it does not, it is not modelling the runtime.
+    const measured = meanFreeIdentification('cause_sensor_defective', {
+      ...graph,
+      symptoms: {
+        ...graph.symptoms,
+        sym_pressure_drop: { title: 'a' },
+        sym_voltage_drop: { title: 'b' },
+      },
+    }, { min: 0, max: 40 });
+    expect(measured).toBeGreaterThan(40 / 3 - 0.5);
+    expect(measured).toBeLessThan(40 / 3 + 0.5);
   });
 });

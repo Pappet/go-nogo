@@ -24,6 +24,18 @@ import type { MeasureSpec, ResourceCapacities } from './measures.js';
 
 export interface SymptomDef {
   readonly title: string;
+  /**
+   * How long this particular reading takes to move, in sim seconds. Optional:
+   * a symptom without a band uses the global one from `data/anomalies.json`.
+   *
+   * This exists because a diagnosis is only worth buying when it is faster
+   * than the symptoms. A reading that identifies its cause on its own has to
+   * arrive *late*, or waiting for it is strictly better than paying — and the
+   * console's whole middle column becomes decoration. Per symptom rather than
+   * per cause: the same late reading discriminates for several causes at once,
+   * and tuning it in one place keeps them consistent.
+   */
+  readonly delay_s?: { readonly min: number; readonly max: number };
 }
 
 export interface MeasureRef {
@@ -205,6 +217,18 @@ function scale(unit: number, low: number, high: number): number {
   return low + unit * (high - low);
 }
 
+/** The symptom's own band, or the global one when it does not declare one. */
+export function delayBandOf(
+  graph: CauseGraph,
+  symptomId: string,
+  bands: SymptomBands,
+): [number, number] {
+  const own = graph.symptom(symptomId).delay_s;
+  return own === undefined
+    ? [bands.symptomDelay_s.min, bands.symptomDelay_s.max]
+    : [own.min, own.max];
+}
+
 /**
  * Builds the symptom instances for one occurrence of a cause.
  *
@@ -230,8 +254,7 @@ export function buildSymptomInstances(
       ),
       rawDelay_s: scale(
         hashUnit(seed, key, 'symptomDelay'),
-        bands.symptomDelay_s.min,
-        bands.symptomDelay_s.max,
+        ...delayBandOf(graph, symptomId, bands),
       ),
     };
   });
@@ -277,6 +300,30 @@ export function validateCauseGraph(data: CauseGraphData): void {
       if (wrong.side_effect !== undefined && data.causes[wrong.side_effect] === undefined) {
         problems.push(`cause '${causeId}' has a side effect on unknown cause '${wrong.side_effect}'`);
       }
+    }
+  }
+
+  for (const [symptomId, symptom] of Object.entries(data.symptoms)) {
+    const band = symptom.delay_s;
+    if (band === undefined) continue;
+    // An inverted or negative band would draw silently wrong delays rather
+    // than fail, and a symptom that never shows is not a symptom.
+    if (band.min < 0 || band.max < band.min) {
+      problems.push(
+        `symptom '${symptomId}' has an impossible delay band ${band.min}..${band.max}`,
+      );
+    }
+  }
+
+  for (const [symptomId, symptom] of Object.entries(data.symptoms)) {
+    const band = symptom.delay_s;
+    if (band === undefined) continue;
+    // An inverted or negative band draws silently wrong delays rather than
+    // failing, and it is exactly the kind of thing a hand-edit gets wrong.
+    if (band.min < 0 || band.max < band.min) {
+      problems.push(
+        `symptom '${symptomId}' has an impossible delay band ${band.min}..${band.max}`,
+      );
     }
   }
 

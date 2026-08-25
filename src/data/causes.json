@@ -12,10 +12,18 @@
       "title": "Steering noisy, wobble detected"
     },
     "sym_telemetry_gaps": {
-      "title": "Telemetry downlink patchy"
+      "title": "Telemetry downlink patchy",
+      "delay_s": {
+        "min": 25,
+        "max": 60
+      }
     },
     "sym_voltage_drop": {
-      "title": "Bus voltage dropping rapidly"
+      "title": "Bus voltage dropping rapidly",
+      "delay_s": {
+        "min": 0,
+        "max": 15
+      }
     },
     "sym_icing": {
       "title": "Critical temperature warning: Valve freezing"

@@ -16,6 +16,7 @@ import {
   type CauseGraphData,
   type SymptomBands,
   buildSymptomInstances,
+  delayBandOf,
   loadCauseGraph,
   validateCauseGraph,
 } from './causeGraph.js';
@@ -170,17 +171,54 @@ describe('symptom instances', () => {
     );
   });
 
-  it('stays inside the visible band, so a symptom is never invisible', () => {
+  it('stays inside the bands, so a symptom is never invisible', () => {
     for (let mission = 0; mission < 200; mission++) {
       for (const causeId of graph.causeIds) {
-        for (const instance of buildSymptomInstances(graph, bands, 42, `m${mission}`, causeId)) {
+        const instances = buildSymptomInstances(graph, bands, 42, `m${mission}`, causeId);
+        // The shift-to-zero is the contract the auto-pause rests on: whatever
+        // the bands say, the crisis announces itself on the tick it starts.
+        expect(Math.min(...instances.map((instance) => instance.delay_s))).toBe(0);
+
+        // The widest a shifted delay can be is this symptom's own ceiling minus
+        // the earliest floor any of the cause's symptoms could have drawn.
+        const floor = Math.min(
+          ...graph.cause(causeId).symptoms.map(
+            (symptomId) => delayBandOf(graph, symptomId, bands)[0],
+          ),
+        );
+        for (const instance of instances) {
           expect(instance.strength).toBeGreaterThanOrEqual(bands.symptomStrength.min);
           expect(instance.strength).toBeLessThanOrEqual(bands.symptomStrength.max);
-          expect(instance.delay_s).toBeGreaterThanOrEqual(bands.symptomDelay_s.min);
-          expect(instance.delay_s).toBeLessThanOrEqual(bands.symptomDelay_s.max);
+          expect(instance.delay_s).toBeGreaterThanOrEqual(0);
+          expect(instance.delay_s).toBeLessThanOrEqual(
+            delayBandOf(graph, instance.symptomId, bands)[1] - floor,
+          );
         }
       }
     }
+  });
+
+  it('gives a symptom with its own band that band, and the rest the global one', () => {
+    // The lever the wait-vs-pay balance hangs on (§5.5): a reading that names
+    // its cause alone has to arrive late, or waiting beats buying a diagnosis.
+    expect(delayBandOf(graph, 'sym_telemetry_gaps', bands)).not.toEqual([
+      bands.symptomDelay_s.min,
+      bands.symptomDelay_s.max,
+    ]);
+    expect(delayBandOf(graph, 'sym_wobble', bands)).toEqual([
+      bands.symptomDelay_s.min,
+      bands.symptomDelay_s.max,
+    ]);
+
+    // And the draw honours it: telemetry gaps are the last thing to move on a
+    // bus short, which is what makes the avionics query worth its 22 seconds.
+    let lastCount = 0;
+    for (let mission = 0; mission < 200; mission++) {
+      const instances = buildSymptomInstances(graph, bands, 42, `m${mission}`, 'cause_bus_short');
+      const latest = instances.reduce((a, b) => (a.delay_s >= b.delay_s ? a : b));
+      if (latest.symptomId === 'sym_telemetry_gaps') lastCount += 1;
+    }
+    expect(lastCount).toBeGreaterThan(190);
   });
 
   it('actually varies — the same cause does not look the same twice', () => {

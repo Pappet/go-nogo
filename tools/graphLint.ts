@@ -23,7 +23,13 @@
 
 // ---------- Types (shared schema with the game / mod loader) ----------
 
-export interface SymptomDef { title: string; }
+export interface DelayBand { min: number; max: number; }
+
+export interface SymptomDef {
+    title: string;
+    /** This reading's own delay band. Absent = the global band applies. */
+    delay_s?: DelayBand;
+}
 
 export interface MeasureRef { measure: string; side_effect?: string; }
 
@@ -192,9 +198,79 @@ function bestPlan(causeId: string, data: GraphData): Plan | null {
     return best;
 }
 
+/**
+ * Mean time until the readings alone name the cause, in sim seconds.
+ *
+ * Deterministic on purpose: instead of sampling the RNG, each symptom's band
+ * is walked at fixed quantile midpoints and every combination is enumerated.
+ * Same answer on every machine and in every run, which is what a lint rule
+ * needs — and close enough to the uniform draw the runtime makes.
+ *
+ * Mirrors `buildSymptomInstances`: draw a raw delay per symptom, then shift so
+ * the earliest reading lands at zero. Returns Infinity when the full set never
+ * identifies the cause (another cause explains all of it), which is the case
+ * the rule does not care about.
+ */
+const QUANTILE_STEPS = 24;
+
+export function meanFreeIdentification(
+    causeId: string,
+    data: GraphData,
+    globalBand: DelayBand,
+): number {
+    const symptoms = data.causes[causeId].symptoms;
+    const bands = symptoms.map(s => data.symptoms[s]?.delay_s ?? globalBand);
+
+    // Which causes explain every symptom in a set — the same test the runtime
+    // uses to decide whether the candidate list has collapsed to one.
+    const identifies = (seen: string[]): boolean =>
+        Object.keys(data.causes).filter(other =>
+            seen.every(s => data.causes[other].symptoms.includes(s))).length === 1;
+
+    let total = 0;
+    let counted = 0;
+    const draws = new Array<number>(symptoms.length);
+
+    const walk = (index: number): void => {
+        if (index === symptoms.length) {
+            const earliest = Math.min(...draws);
+            const order = symptoms
+                .map((symptomId, i) => ({ symptomId, at: draws[i] - earliest }))
+                .sort((a, b) => a.at - b.at);
+            const seen: string[] = [];
+            for (const entry of order) {
+                seen.push(entry.symptomId);
+                if (identifies(seen)) {
+                    total += entry.at;
+                    counted += 1;
+                    return;
+                }
+            }
+            return;
+        }
+        const { min, max } = bands[index];
+        for (let step = 0; step < QUANTILE_STEPS; step += 1) {
+            draws[index] = min + ((step + 0.5) / QUANTILE_STEPS) * (max - min);
+            walk(index + 1);
+        }
+    };
+    walk(0);
+
+    return counted === 0 ? Infinity : total / counted;
+}
+
 // ---------- The linter ----------
 
-export function lintGraph(data: GraphData): LintResult {
+export interface LintOptions {
+    /**
+     * The global symptom delay band from `data/anomalies.json`. Rule 6 needs
+     * it to measure how long waiting actually takes; without it the rule falls
+     * back to reporting bare uniqueness, which is the weaker statement.
+     */
+    globalDelayBand?: DelayBand;
+}
+
+export function lintGraph(data: GraphData, options: LintOptions = {}): LintResult {
     const errors: string[] = [];
     const warnings: string[] = [];
     const report: string[] = [];
@@ -295,21 +371,44 @@ export function lintGraph(data: GraphData): LintResult {
         }
     }
 
-    // ---- Rule 6: a symptom *set* must not identify a cause for free ----
+    // ---- Rule 6: waiting must not beat paying ----
     // Rule 2 protects single symptoms. It cannot see that a cause may be the
-    // only one explaining its whole set — and once every symptom is on screen,
-    // that names the cause without the player paying for a diagnosis. Reported
-    // rather than failed: fixing it means adding symptoms, which is content
-    // design and bumps against the 1–3 symptoms per cause of §5.1.
+    // only one explaining its whole *set* — once every reading is on screen,
+    // that names the cause for free. What decides whether that matters is not
+    // uniqueness but timing: a diagnosis is worth buying only when it is
+    // faster than the symptoms. So the rule measures both and compares them.
+    //
+    // Reported rather than failed, because the fix is a tuning pass on the
+    // delay bands and the designer may want the free path on purpose.
     for (const causeId of causeIds) {
         if (data.causes[causeId].is_chain) continue;
         const needed = data.causes[causeId].symptoms;
         const explainers = causeIds.filter(other =>
             needed.every(s => data.causes[other].symptoms.includes(s)));
-        if (explainers.length === 1) {
+        if (explainers.length !== 1) continue;
+
+        const band = options.globalDelayBand;
+        if (!band) {
             warn(
                 `Rule 6: the full symptom set of '${causeId}' is explained by no other cause — ` +
-                `waiting for every reading identifies it without paying for a diagnosis.`,
+                `waiting for every reading identifies it. Timing not checked (no global delay band given).`,
+            );
+            continue;
+        }
+
+        const free = meanFreeIdentification(causeId, data, band);
+        const plan = bestPlan(causeId, data);
+        const paid = plan ? plan.diagMakespan : Infinity;
+        if (free <= paid) {
+            warn(
+                `Rule 6: '${causeId}' identifies itself for free after ~${free.toFixed(1)}s, ` +
+                `but the cheapest diagnosis needs ${paid}s — waiting beats paying, so the ` +
+                `diagnosis panel is decoration for this cause.`,
+            );
+        } else {
+            report.push(
+                `${causeId}: free identification after ~${free.toFixed(1)}s vs ${paid}s to buy it ` +
+                `— paying wins by ${(free - paid).toFixed(1)}s.`,
             );
         }
     }
@@ -340,8 +439,18 @@ async function cli() {
     const fs = await import('fs');
     const path = await import('path');
     const file = process.argv[2] ?? 'causes.json';
-    const data = JSON.parse(fs.readFileSync(path.resolve(file), 'utf-8')) as GraphData;
-    const { errors, warnings, report } = lintGraph(data);
+    const resolved = path.resolve(file);
+    const data = JSON.parse(fs.readFileSync(resolved, 'utf-8')) as GraphData;
+
+    // The global band lives with the other runtime tuning, next to the graph.
+    // Read rather than duplicated: a second copy of 0..40 here would drift.
+    const anomaliesFile = path.join(path.dirname(resolved), 'anomalies.json');
+    const globalDelayBand = fs.existsSync(anomaliesFile)
+        ? (JSON.parse(fs.readFileSync(anomaliesFile, 'utf-8')) as { symptomDelay_s: DelayBand })
+              .symptomDelay_s
+        : undefined;
+
+    const { errors, warnings, report } = lintGraph(data, { globalDelayBand });
 
     if (report.length) {
         console.log('Solution plans (paper-playtest input):');
