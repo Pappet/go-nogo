@@ -22,9 +22,14 @@ export interface StateHash {
   readonly sha256: string;
 }
 
-/** Phase 0 flies one hard-wired vehicle, so the configuration only names it. */
+/**
+ * Phase 1 flies one hard-wired vehicle, so the configuration names it — plus
+ * the mission key, which decides every anomaly draw (§8.2 rule 5). Without the
+ * key the same seed replays a different crisis, so it belongs in the run.
+ */
 export interface MissionConfig {
   readonly rocketName: string;
+  readonly missionKey: string;
 }
 
 export interface Run {

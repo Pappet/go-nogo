@@ -24,3 +24,7 @@ jobs:
       - run: npm test
 
       - run: npm run build
+
+      # Concept §8.4: the cause graph is data, so it is checked mechanically
+      # on every change to src/data/causes.json.
+      - run: npm run lint:graph

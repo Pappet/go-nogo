@@ -15,13 +15,10 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import checklistData from '../data/checklist.json' with { type: 'json' };
-import pitchData from '../data/pitchProgram.json' with { type: 'json' };
-import rocketData from '../data/rocket.json' with { type: 'json' };
-import { type ChecklistDef, createMissionState } from '../sim/countdown.js';
-import type { Command } from '../sim/engine.js';
-import type { PitchProgram } from '../sim/physics/ascentProgram.js';
-import type { RocketDef } from '../sim/physics/thrust.js';
+import { createMissionConfig } from '../missionConfig.js';
+import { createMissionState } from '../sim/countdown.js';
+import { TICKS_PER_SECOND, type Command } from '../sim/engine.js';
+import { buildMissionReport, verdictLine } from '../sim/diagnosis/postMortem.js';
 
 import { HASH_INTERVAL_TICKS, play, playRun, verifyRun } from './playback.js';
 import {
@@ -33,11 +30,7 @@ import {
   sliceRun,
 } from './run.js';
 
-const config = {
-  rocket: rocketData as RocketDef,
-  pitchProgram: pitchData as PitchProgram,
-  checklist: checklistData as ChecklistDef,
-};
+const config = createMissionConfig();
 
 /**
  * Seed 42 and a fixed command log, exactly as CLAUDE.md specifies.
@@ -68,7 +61,7 @@ function recordRun(): Run {
     gameVersion: GAME_VERSION,
     dataVersion: computeDataVersion(config.rocket, config.pitchProgram, config.checklist),
     seed: SEED,
-    configuration: { rocketName: config.rocket.name },
+    configuration: { rocketName: config.rocket.name, missionKey: config.missionKey },
     commands: COMMANDS,
     stateHashes: result.hashes,
   };
@@ -107,12 +100,47 @@ describe('replay fixture (seed 42)', () => {
     expect(`${result.finalTick}:${result.finalHash}`).toBe(`${recorded.tick}:${recorded.sha256}`);
   });
 
-  it('reaches orbit — the run is a real flight, not an empty one', () => {
+  it('is a real flight that goes wrong — not an empty one', () => {
+    // The command log launches and then never touches the anomalies, so they
+    // run their windows out and cascade. That makes this a stronger
+    // determinism fixture than a clean ascent: escalation, chain spawning and
+    // the loss of the vehicle all have to reproduce bit for bit.
     const result = playRun(fixture, config, RUN_LENGTH_TICKS);
     expect(result.state.flight.ignited).toBe(true);
-    expect(result.state.flight.separated).toBe(true);
-    expect(result.state.flight.cutoff).toBe(true);
-    expect(result.state.phase).toBe('ORBIT_CHECK');
+    expect(result.state.missionLost).toBe(true);
+    // Lost at T+122 s, which is before staging would have happened — the
+    // cascade ends the flight rather than the flight ending the cascade.
+    expect(result.state.flight.separated).toBe(false);
+    expect(
+      result.state.events.filter((event) => event.type === 'ANOMALY_CHAIN').length,
+    ).toBeGreaterThan(0);
+  });
+
+  it('reports on the flight the fixture actually flew', () => {
+    // The post-mortem's claim is that it cannot drift from what happened,
+    // because it derives everything from state the simulation already holds.
+    // Building it from the fixture run is the test of that claim: the report
+    // has to agree with a flight nobody wrote it against.
+    const result = playRun(fixture, config, RUN_LENGTH_TICKS);
+    const report = buildMissionReport(
+      config.causeGraph,
+      result.state.diagnosis.anomalies,
+      result.state.diagnosis.results,
+      result.state.missionLost,
+      0.11,
+      TICKS_PER_SECOND,
+    );
+
+    expect(report.lost).toBe(true);
+    // Nobody diagnosed and nobody acted, so every anomaly is untouched.
+    expect(report.diagnosesBought).toBe(0);
+    expect(report.wrongMeasures).toBe(0);
+    expect(report.untouched).toBe(report.anomalies.length);
+    expect(report.anomalies.some((entry) => entry.verdict === 'escalated')).toBe(true);
+    // A cascade means at least one anomaly names what it came out of.
+    expect(report.anomalies.some((entry) => entry.chain.length > 1)).toBe(true);
+    expect(verdictLine(report)).toContain('Risk accepted: 11 %');
+    expect(verdictLine(report)).toContain('Vehicle lost');
   });
 
   it('detects a tampered hash and localises it to its 30-second window', () => {
@@ -198,8 +226,8 @@ describe('double playback', () => {
 
   it('is unaffected by a fresh state object', () => {
     // Guards against state leaking through module scope between runs.
-    const first = play(config, COMMANDS, 3000, createMissionState(config.checklist));
-    const second = play(config, COMMANDS, 3000, createMissionState(config.checklist));
+    const first = play(config, COMMANDS, 3000, createMissionState(config));
+    const second = play(config, COMMANDS, 3000, createMissionState(config));
     expect(second.finalHash).toBe(first.finalHash);
   });
 });

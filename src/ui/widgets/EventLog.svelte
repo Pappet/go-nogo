@@ -17,7 +17,13 @@
 <section class="log" aria-label="Event log">
   <header>EVENT LOG</header>
   <ol>
-    {#each events as event (event.tick + event.type)}
+    <!--
+      Keyed by position, not by content: the log is append-only and never
+      reordered, and two events of the same type can share a tick — five
+      checklist switches thrown in one frame do, which made the key collide
+      and Svelte drop rows.
+    -->
+    {#each events as event, index (index)}
       <li class:milestone={isMilestone(event.type)}>
         <span class="time">{formatMissionClock(event.missionTime_s)}</span>
         <span class="message">{event.message}</span>

@@ -1,0 +1,10 @@
+{
+  "description": "Static risk budget for Phase 1 (concept §5.4). One pre-launch loss-of-mission estimate, shown before launch and quoted back by the post-mortem. Making it respond to a configuration is Phase 2's configurator.",
+  "lossOfMission": 0.11,
+  "lines": [
+    { "label": "Series-grade valves, no acceptance test", "contribution": 0.045 },
+    { "label": "Single telemetry path, no redundancy", "contribution": 0.03 },
+    { "label": "Ascent through max-Q at 92 % of structural limit", "contribution": 0.02 },
+    { "label": "Second stage with 0.4 % propellant reserve", "contribution": 0.015 }
+  ]
+}

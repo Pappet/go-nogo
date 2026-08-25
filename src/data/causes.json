@@ -12,10 +12,18 @@
       "title": "Steering noisy, wobble detected"
     },
     "sym_telemetry_gaps": {
-      "title": "Telemetry downlink patchy"
+      "title": "Telemetry downlink patchy",
+      "delay_s": {
+        "min": 25,
+        "max": 60
+      }
     },
     "sym_voltage_drop": {
-      "title": "Bus voltage dropping rapidly"
+      "title": "Bus voltage dropping rapidly",
+      "delay_s": {
+        "min": 0,
+        "max": 15
+      }
     },
     "sym_icing": {
       "title": "Critical temperature warning: Valve freezing"
@@ -44,6 +52,7 @@
           "side_effect": "chain_flameout"
         }
       ],
+      "escalates_to": "chain_flameout",
       "escalation_s": 55
     },
     "cause_prop_leak": {
@@ -66,6 +75,7 @@
           "side_effect": "chain_flameout"
         }
       ],
+      "escalates_to": "chain_flameout",
       "escalation_s": 55
     },
     "cause_sensor_defective": {
@@ -87,6 +97,7 @@
           "side_effect": "chain_icing"
         }
       ],
+      "escalates_to": "chain_icing",
       "escalation_s": 45
     },
     "cause_bus_short": {
@@ -108,6 +119,7 @@
           "side_effect": "chain_flameout"
         }
       ],
+      "escalates_to": "chain_icing",
       "escalation_s": 60
     },
     "chain_icing": {
@@ -147,6 +159,7 @@
       "type": "diagnosis",
       "duration_s": 10,
       "occupies": [
+        "channel:any",
         "channel:any"
       ],
       "discriminates": [
@@ -156,9 +169,10 @@
     "measure_diag_team_prop": {
       "title": "Ask Propulsion team",
       "type": "diagnosis",
-      "duration_s": 45,
+      "duration_s": 22,
       "occupies": [
-        "engineer:prop"
+        "engineer:prop",
+        "channel:any"
       ],
       "discriminates": [
         "cause_valve_sluggish"
@@ -167,9 +181,10 @@
     "measure_diag_team_avionics": {
       "title": "Ask Avionics team",
       "type": "diagnosis",
-      "duration_s": 45,
+      "duration_s": 22,
       "occupies": [
-        "engineer:avionics"
+        "engineer:avionics",
+        "channel:any"
       ],
       "discriminates": [
         "cause_bus_short"
@@ -219,6 +234,10 @@
     }
   },
   "_resources": {
-    "channel:any": 1
+    "channel:any": 4,
+    "engineer:prop": 1,
+    "engineer:avionics": 1,
+    "flightcomputer:slot1": 1,
+    "fuel_line:main": 1
   }
 }

@@ -52,6 +52,14 @@ export interface Simulation<S> {
 
   /** Jump straight to `tick` analytically. Only called when `canCoast` holds. */
   coastTo(state: S, tick: number): void;
+
+  /**
+   * Asked after every tick: did something happen that should stop the clock?
+   *
+   * This is how auto-pause stays simulation state at a tick rather than a UI
+   * timer (concept §8.2 rule 6). The world decides; the engine only obeys.
+   */
+  wantsPause?(state: S): boolean;
 }
 
 export class Engine<S> {
@@ -275,5 +283,9 @@ export class Engine<S> {
     this.applyDueCommands();
     this.simulation.step(this.state, this.currentTick);
     this.currentTick += 1;
+
+    if (this.simulation.wantsPause?.(this.state) === true) {
+      this.pause();
+    }
   }
 }

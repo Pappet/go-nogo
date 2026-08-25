@@ -9,7 +9,21 @@
  * GO. After that the sequence runs itself and the milestones fall out of the
  * physics rather than being scheduled.
  */
+import {
+  type DiagnosisState,
+  createDiagnosisState,
+  queueMeasure,
+  stepDiagnosis,
+} from './diagnosis/diagnosis.js';
+import type { CauseGraph } from './diagnosis/causeGraph.js';
 import { DT_MS, type Command, type Simulation } from './engine.js';
+import { type PauseModelKind, createPauseState } from './pauseModel.js';
+import { type PriorSettings, rollMissionContext } from './diagnosis/priors.js';
+import {
+  type AnomalySettings,
+  planAnomalies,
+  stepAnomalies,
+} from './systems/anomaly.js';
 import {
   type FlightConfig,
   type FlightState,
@@ -66,12 +80,21 @@ export interface MissionState {
   events: MissionEvent[];
   /** Dynamic pressure at the previous tick, for detecting the max-Q peak. */
   previousDynamicPressure_Pa: number;
+  /** True once a cascade ran out of chain to escalate into. */
+  missionLost: boolean;
+  /** Everything the anomaly and diagnosis systems own (Phase 1). */
+  diagnosis: DiagnosisState;
+  /**
+   * Set on the tick a new anomaly appeared and cleared once the engine has
+   * stopped for it. Auto-pause is a state the world reaches, not something the
+   * console does on a timer (§8.2 rule 6).
+   */
+  pauseRequested: boolean;
 }
 
 export interface ChecklistItem {
   readonly id: string;
   readonly label: string;
-  readonly hotkey: string;
 }
 
 export interface ChecklistDef {
@@ -81,16 +104,29 @@ export interface ChecklistDef {
 
 export interface MissionConfigInput extends FlightConfig {
   readonly checklist: ChecklistDef;
+  readonly causeGraph: CauseGraph;
+  readonly anomalySettings: AnomalySettings;
+  readonly priorSettings: PriorSettings;
+  /** Pins the mission's anomalies and context profile. */
+  readonly seed: number;
+  readonly missionKey: string;
+  readonly pauseModel?: PauseModelKind;
 }
 
-export function createMissionState(checklist: ChecklistDef): MissionState {
+export function createMissionState(config: MissionConfigInput): MissionState {
   return {
     flight: createFlightState(),
     phase: 'HOLD',
-    checklist: checklist.items.map(() => false),
+    checklist: config.checklist.items.map(() => false),
     ignitionTick: -1,
     events: [],
     previousDynamicPressure_Pa: 0,
+    missionLost: false,
+    diagnosis: createDiagnosisState(
+      createPauseState(config.pauseModel ?? 'standard'),
+      rollMissionContext(config.priorSettings, config.seed, config.missionKey),
+    ),
+    pauseRequested: false,
   };
 }
 
@@ -216,6 +252,7 @@ export function createMissionSimulation(config: MissionConfigInput): Simulation<
     }
 
     flightSimulation.step(state.flight, tick);
+    stepDiagnosisFor(state, tick);
 
     const dynamicPressure_Pa =
       state.flight.liftoffTick >= 0
@@ -224,6 +261,62 @@ export function createMissionSimulation(config: MissionConfigInput): Simulation<
 
     advancePhase(state, tick, dynamicPressure_Pa);
     state.previousDynamicPressure_Pa = dynamicPressure_Pa;
+  }
+
+  /**
+   * Runs the anomaly and diagnosis systems for this tick and turns whatever
+   * they report into log entries.
+   *
+   * Anomalies are planned once, at liftoff: before the vehicle leaves the pad
+   * there is nothing to go wrong with, and planning them from the liftoff tick
+   * keeps their onsets relative to the flight rather than to the countdown.
+   */
+  function stepDiagnosisFor(state: MissionState, tick: number): void {
+    if (state.flight.liftoffTick < 0) return;
+
+    if (tick === state.flight.liftoffTick) {
+      state.diagnosis.anomalies.anomalies = planAnomalies(
+        config.causeGraph,
+        config.anomalySettings,
+        config.seed,
+        config.missionKey,
+        state.flight.liftoffTick,
+      );
+    }
+
+    const outcome = stepDiagnosis(
+      state.diagnosis,
+      config.causeGraph,
+      config.anomalySettings,
+      config.seed,
+      config.missionKey,
+      tick,
+      stepAnomalies,
+    );
+
+    for (const event of outcome.events) {
+      // The onset itself is not observable — no reading has moved yet. Logging
+      // "anomaly detected" there would claim knowledge the player does not
+      // have; the symptom entries are what they actually see.
+      if (event.type === 'ONSET') continue;
+      record(state, tick, `ANOMALY_${event.type}`, event.detail);
+      if (event.type === 'LOST') {
+        // The vehicle is gone. Cutting thrust is the honest consequence: a
+        // flameout does not keep pushing.
+        state.missionLost = true;
+        state.flight.cutoff = true;
+      }
+    }
+    for (const result of outcome.results) {
+      const measure = config.causeGraph.measure(result.measureId).title;
+      const verdict =
+        result.confirmed !== null
+          ? `confirms ${config.causeGraph.cause(result.confirmed).title}`
+          : `rules out ${result.excluded.length} candidate(s)`;
+      record(state, tick, 'DIAGNOSIS', `${measure} — ${verdict}`);
+    }
+
+    if (outcome.autoPause) state.pauseRequested = true;
   }
 
   function apply(state: MissionState, command: Command, tick: number): void {
@@ -255,6 +348,15 @@ export function createMissionSimulation(config: MissionConfigInput): Simulation<
         return;
       }
 
+      case 'queueMeasure': {
+        const payload = command.payload as { measureId: string; anomalyId: string };
+        const accepted = queueMeasure(state.diagnosis, payload.measureId, payload.anomalyId, tick);
+        if (accepted) {
+          record(state, tick, 'MEASURE', `${config.causeGraph.measure(payload.measureId).title} queued`);
+        }
+        return;
+      }
+
       default:
         flightSimulation.apply(state.flight, command, tick);
     }
@@ -263,6 +365,15 @@ export function createMissionSimulation(config: MissionConfigInput): Simulation<
   return {
     step,
     apply,
+    /**
+     * Consumed once: the engine stops, and the same anomaly does not stop it
+     * again on the next tick.
+     */
+    wantsPause: (state) => {
+      if (!state.pauseRequested) return false;
+      state.pauseRequested = false;
+      return true;
+    },
     canCoast: (state) => flightSimulation.canCoast(state.flight),
     coastTo: (state, tick) => {
       flightSimulation.coastTo(state.flight, tick);

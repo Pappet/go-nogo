@@ -23,13 +23,21 @@
 
 // ---------- Types (shared schema with the game / mod loader) ----------
 
-export interface SymptomDef { title: string; }
+export interface DelayBand { min: number; max: number; }
+
+export interface SymptomDef {
+    title: string;
+    /** This reading's own delay band. Absent = the global band applies. */
+    delay_s?: DelayBand;
+}
 
 export interface MeasureRef { measure: string; side_effect?: string; }
 
 export interface CauseDef {
     title: string;
     symptoms: string[];
+    /** Cause that takes over when this one is left past its window (§5.3). */
+    escalates_to?: string;
     /** Escalation window for this cause in sim seconds. */
     escalation_s?: number;
     context_priors?: string[];
@@ -77,13 +85,32 @@ export function scheduleMakespan(
     data: GraphData,
 ): number {
     const capacities = data._resources ?? {};
-    // Per resource: sorted list of busy-until times, one entry per occupied slot.
-    const busy: Record<string, number[]> = {};
-    const slots = (res: string) => {
-        if (!busy[res]) busy[res] = [];
-        return busy[res];
-    };
     const capacity = (res: string) => capacities[res] ?? 1;
+
+    // One entry per slot, holding the time that slot frees up. Fixed length,
+    // because a resource has as many slots as its capacity and no more.
+    const slotsByResource: Record<string, number[]> = {};
+    const slotsOf = (res: string) => {
+        if (!slotsByResource[res]) {
+            slotsByResource[res] = new Array<number>(capacity(res)).fill(0);
+        }
+        return slotsByResource[res];
+    };
+
+    /**
+     * How many slots of each resource a measure needs. A token repeated in
+     * `occupies` is a request for that many slots — a raw-telemetry check
+     * eating two of four channels, say. Counting the repeats separately
+     * against the current state (rather than as one combined demand) would
+     * let a two-slot measure start with one slot free.
+     */
+    const demandOf = (id: string): Map<string, number> => {
+        const demand = new Map<string, number>();
+        for (const res of data.measures[id].occupies) {
+            demand.set(res, (demand.get(res) ?? 0) + 1);
+        }
+        return demand;
+    };
 
     const tasks = [...measureIds].sort(
         (a, b) => data.measures[b].duration_s - data.measures[a].duration_s,
@@ -92,21 +119,25 @@ export function scheduleMakespan(
     let makespan = 0;
     for (const id of tasks) {
         const m = data.measures[id];
-        // Earliest start: for each resource, the time a slot frees up.
+        const demand = demandOf(id);
+
+        // Earliest start: for each resource, the moment the n-th slot is free.
         let start = 0;
-        for (const res of m.occupies) {
-            const s = slots(res);
-            if (s.length < capacity(res)) continue;          // free slot now
-            start = Math.max(start, Math.min(...s));         // wait for earliest slot
+        for (const [res, needed] of demand) {
+            const free = [...slotsOf(res)].sort((a, b) => a - b);
+            if (needed > free.length) return Number.POSITIVE_INFINITY; // impossible
+            start = Math.max(start, free[needed - 1]);
         }
-        // Occupy the slots.
-        for (const res of m.occupies) {
-            const s = slots(res);
-            if (s.length < capacity(res)) {
-                s.push(start + m.duration_s);
-            } else {
-                const i = s.indexOf(Math.min(...s));
-                s[i] = Math.max(s[i], start) + m.duration_s;
+
+        // Occupy that many slots, taking the ones that free up earliest.
+        for (const [res, needed] of demand) {
+            const slots = slotsOf(res);
+            for (let taken = 0; taken < needed; taken++) {
+                let earliest = 0;
+                for (let i = 1; i < slots.length; i++) {
+                    if (slots[i] < slots[earliest]) earliest = i;
+                }
+                slots[earliest] = start + m.duration_s;
             }
         }
         makespan = Math.max(makespan, start + m.duration_s);
@@ -167,9 +198,79 @@ function bestPlan(causeId: string, data: GraphData): Plan | null {
     return best;
 }
 
+/**
+ * Mean time until the readings alone name the cause, in sim seconds.
+ *
+ * Deterministic on purpose: instead of sampling the RNG, each symptom's band
+ * is walked at fixed quantile midpoints and every combination is enumerated.
+ * Same answer on every machine and in every run, which is what a lint rule
+ * needs — and close enough to the uniform draw the runtime makes.
+ *
+ * Mirrors `buildSymptomInstances`: draw a raw delay per symptom, then shift so
+ * the earliest reading lands at zero. Returns Infinity when the full set never
+ * identifies the cause (another cause explains all of it), which is the case
+ * the rule does not care about.
+ */
+const QUANTILE_STEPS = 24;
+
+export function meanFreeIdentification(
+    causeId: string,
+    data: GraphData,
+    globalBand: DelayBand,
+): number {
+    const symptoms = data.causes[causeId].symptoms;
+    const bands = symptoms.map(s => data.symptoms[s]?.delay_s ?? globalBand);
+
+    // Which causes explain every symptom in a set — the same test the runtime
+    // uses to decide whether the candidate list has collapsed to one.
+    const identifies = (seen: string[]): boolean =>
+        Object.keys(data.causes).filter(other =>
+            seen.every(s => data.causes[other].symptoms.includes(s))).length === 1;
+
+    let total = 0;
+    let counted = 0;
+    const draws = new Array<number>(symptoms.length);
+
+    const walk = (index: number): void => {
+        if (index === symptoms.length) {
+            const earliest = Math.min(...draws);
+            const order = symptoms
+                .map((symptomId, i) => ({ symptomId, at: draws[i] - earliest }))
+                .sort((a, b) => a.at - b.at);
+            const seen: string[] = [];
+            for (const entry of order) {
+                seen.push(entry.symptomId);
+                if (identifies(seen)) {
+                    total += entry.at;
+                    counted += 1;
+                    return;
+                }
+            }
+            return;
+        }
+        const { min, max } = bands[index];
+        for (let step = 0; step < QUANTILE_STEPS; step += 1) {
+            draws[index] = min + ((step + 0.5) / QUANTILE_STEPS) * (max - min);
+            walk(index + 1);
+        }
+    };
+    walk(0);
+
+    return counted === 0 ? Infinity : total / counted;
+}
+
 // ---------- The linter ----------
 
-export function lintGraph(data: GraphData): LintResult {
+export interface LintOptions {
+    /**
+     * The global symptom delay band from `data/anomalies.json`. Rule 6 needs
+     * it to measure how long waiting actually takes; without it the rule falls
+     * back to reporting bare uniqueness, which is the weaker statement.
+     */
+    globalDelayBand?: DelayBand;
+}
+
+export function lintGraph(data: GraphData, options: LintOptions = {}): LintResult {
     const errors: string[] = [];
     const warnings: string[] = [];
     const report: string[] = [];
@@ -177,6 +278,17 @@ export function lintGraph(data: GraphData): LintResult {
     const warn = (m: string) => warnings.push(m);
 
     const causeIds = Object.keys(data.causes);
+
+    // Said once, up front, rather than left to Rule 6: a graph where no cause
+    // happens to be self-identifying would produce no Rule 6 output at all,
+    // and the run would look like a full pass while the timing check never
+    // happened. A linter must never quietly get weaker.
+    if (!options.globalDelayBand) {
+        warn(
+            'No global symptom delay band given — Rule 6 cannot measure timing and falls back ' +
+            'to reporting bare uniqueness. This run is weaker than a full one.',
+        );
+    }
     const measureIds = Object.keys(data.measures);
 
     // ---- Referential integrity (everything, loudly — no silent skips) ----
@@ -206,10 +318,22 @@ export function lintGraph(data: GraphData): LintResult {
             err(`Design: diagnosis '${mId}' discriminates nothing — it is useless to the player.`);
         }
     }
+    // Escalation targets must exist, and must be chains.
+    for (const causeId of causeIds) {
+        const target = data.causes[causeId].escalates_to;
+        if (target === undefined) continue;
+        if (!data.causes[target]) {
+            err(`Integrity: cause '${causeId}' escalates into unknown cause '${target}'.`);
+        } else if (!data.causes[target].is_chain) {
+            warn(`Design: escalation target '${target}' of '${causeId}' is not marked is_chain.`);
+        }
+    }
+
     // Every chain cause must be reachable through some side_effect.
-    const sideEffectTargets = new Set(
-        causeIds.flatMap(id => data.causes[id].incorrect_measures.map(im => im.side_effect)).filter(Boolean) as string[],
-    );
+    const sideEffectTargets = new Set([
+        ...causeIds.flatMap(id => data.causes[id].incorrect_measures.map(im => im.side_effect)),
+        ...causeIds.map(id => data.causes[id].escalates_to),
+    ].filter(Boolean) as string[]);
     for (const causeId of causeIds) {
         if (data.causes[causeId].is_chain && !sideEffectTargets.has(causeId)) {
             err(`Integrity: chain cause '${causeId}' is never triggered by any side_effect (dead data).`);
@@ -258,6 +382,48 @@ export function lintGraph(data: GraphData): LintResult {
         }
     }
 
+    // ---- Rule 6: waiting must not beat paying ----
+    // Rule 2 protects single symptoms. It cannot see that a cause may be the
+    // only one explaining its whole *set* — once every reading is on screen,
+    // that names the cause for free. What decides whether that matters is not
+    // uniqueness but timing: a diagnosis is worth buying only when it is
+    // faster than the symptoms. So the rule measures both and compares them.
+    //
+    // Reported rather than failed, because the fix is a tuning pass on the
+    // delay bands and the designer may want the free path on purpose.
+    for (const causeId of causeIds) {
+        if (data.causes[causeId].is_chain) continue;
+        const needed = data.causes[causeId].symptoms;
+        const explainers = causeIds.filter(other =>
+            needed.every(s => data.causes[other].symptoms.includes(s)));
+        if (explainers.length !== 1) continue;
+
+        const band = options.globalDelayBand;
+        if (!band) {
+            warn(
+                `Rule 6: the full symptom set of '${causeId}' is explained by no other cause — ` +
+                `waiting for every reading identifies it. Timing not checked (no global delay band given).`,
+            );
+            continue;
+        }
+
+        const free = meanFreeIdentification(causeId, data, band);
+        const plan = bestPlan(causeId, data);
+        const paid = plan ? plan.diagMakespan : Infinity;
+        if (free <= paid) {
+            warn(
+                `Rule 6: '${causeId}' identifies itself for free after ~${free.toFixed(1)}s, ` +
+                `but the cheapest diagnosis needs ${paid}s — waiting beats paying, so the ` +
+                `diagnosis panel is decoration for this cause.`,
+            );
+        } else {
+            report.push(
+                `${causeId}: free identification after ~${free.toFixed(1)}s vs ${paid}s to buy it ` +
+                `— paying wins by ${(free - paid).toFixed(1)}s.`,
+            );
+        }
+    }
+
     // ---- Rule 5: every side_effect chain terminates ----
     for (const causeId of causeIds) {
         for (const im of data.causes[causeId].incorrect_measures) {
@@ -284,8 +450,22 @@ async function cli() {
     const fs = await import('fs');
     const path = await import('path');
     const file = process.argv[2] ?? 'causes.json';
-    const data = JSON.parse(fs.readFileSync(path.resolve(file), 'utf-8')) as GraphData;
-    const { errors, warnings, report } = lintGraph(data);
+    const resolved = path.resolve(file);
+    const data = JSON.parse(fs.readFileSync(resolved, 'utf-8')) as GraphData;
+
+    // The global band lives with the other runtime tuning, next to the graph.
+    // Read rather than duplicated: a second copy of 0..40 here would drift.
+    const anomaliesFile = path.join(path.dirname(resolved), 'anomalies.json');
+    let globalDelayBand: DelayBand | undefined;
+    if (fs.existsSync(anomaliesFile)) {
+        globalDelayBand = (
+            JSON.parse(fs.readFileSync(anomaliesFile, 'utf-8')) as { symptomDelay_s: DelayBand }
+        ).symptomDelay_s;
+    } else {
+        console.warn(`Note: no ${anomaliesFile} next to the graph — see the warning below.\n`);
+    }
+
+    const { errors, warnings, report } = lintGraph(data, { globalDelayBand });
 
     if (report.length) {
         console.log('Solution plans (paper-playtest input):');

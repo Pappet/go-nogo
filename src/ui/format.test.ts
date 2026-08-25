@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { formatAltitude, formatG, formatMissionClock, formatSpeed } from './format.js';
-import { resolveHotkey } from './hotkeys.js';
+import { CONSOLE_SLOTS, consoleHotkey, panelActionHotkey, resolveHotkey } from './hotkeys.js';
 
 describe('mission clock', () => {
   it('counts down with a minus and up with a plus', () => {
@@ -40,24 +40,62 @@ describe('telemetry readouts', () => {
 });
 
 describe('hotkeys', () => {
-  it('maps 1-5 to the checklist switches', () => {
-    expect(resolveHotkey('1')).toEqual({ kind: 'toggleChecklist', index: 0 });
-    expect(resolveHotkey('5')).toEqual({ kind: 'toggleChecklist', index: 4 });
+  it('gives 1-5 to the consoles, as §7.7 requires from Phase 1', () => {
+    expect(resolveHotkey('1')).toEqual({ kind: 'switchConsole', slot: 'launch', index: 0 });
+    expect(resolveHotkey('4')).toEqual({ kind: 'switchConsole', slot: 'engineering', index: 3 });
+    expect(resolveHotkey('5')).toEqual({ kind: 'switchConsole', slot: 'eventLog', index: 4 });
   });
 
-  it('keeps Space on pause and Enter on arm, as §7.7 requires', () => {
+  it('gives Q W E to the focused panel, with R and T following', () => {
+    expect(resolveHotkey('q')).toEqual({ kind: 'panelAction', index: 0 });
+    expect(resolveHotkey('w')).toEqual({ kind: 'panelAction', index: 1 });
+    expect(resolveHotkey('e')).toEqual({ kind: 'panelAction', index: 2 });
+    expect(resolveHotkey('t')).toEqual({ kind: 'panelAction', index: 4 });
+  });
+
+  it('does not care about shift', () => {
+    expect(resolveHotkey('Q')).toEqual(resolveHotkey('q'));
+    expect(resolveHotkey('D')).toEqual(resolveHotkey('d'));
+  });
+
+  it('keeps Space, Enter and the warp keys on their §7.7 meanings', () => {
     expect(resolveHotkey(' ')).toEqual({ kind: 'togglePause' });
-    expect(resolveHotkey('Enter')).toEqual({ kind: 'arm' });
-  });
-
-  it('binds warp to plus and minus', () => {
+    expect(resolveHotkey('Enter')).toEqual({ kind: 'confirm' });
     expect(resolveHotkey('+')).toEqual({ kind: 'warpUp' });
     expect(resolveHotkey('-')).toEqual({ kind: 'warpDown' });
   });
 
+  it('binds the focus keys', () => {
+    expect(resolveHotkey('d')).toEqual({ kind: 'focusDiagnosis' });
+    expect(resolveHotkey('l')).toEqual({ kind: 'focusEventLog' });
+  });
+
   it('leaves everything else unbound', () => {
-    for (const key of ['a', '0', '6', 'Escape', 'Tab', 'F5']) {
+    for (const key of ['a', '0', '6', 'Escape', 'Tab', 'F5', 'z']) {
       expect(resolveHotkey(key)).toBeNull();
     }
   });
+
+  it('prints a hint for every binding, so none of them is a secret', () => {
+    expect(panelActionHotkey(0)).toBe('Q');
+    expect(panelActionHotkey(4)).toBe('T');
+    expect(panelActionHotkey(9)).toBe('');
+    expect(consoleHotkey(0)).toBe('1');
+    expect(consoleHotkey(3)).toBe('4');
+    expect(consoleHotkey(9)).toBe('');
+  });
+
+  it('resolves every console slot §7 numbers, whether or not it exists yet', () => {
+    // The table does not need to know which phase the game is in; the caller
+    // decides what is available.
+    expect(CONSOLE_SLOTS).toHaveLength(5);
+    for (let index = 0; index < CONSOLE_SLOTS.length; index++) {
+      expect(resolveHotkey(`${index + 1}`)).toEqual({
+        kind: 'switchConsole',
+        slot: CONSOLE_SLOTS[index],
+        index,
+      });
+    }
+  });
 });
+

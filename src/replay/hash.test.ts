@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
-import checklistData from '../data/checklist.json' with { type: 'json' };
-import { type ChecklistDef, createMissionState } from '../sim/countdown.js';
+import { createMissionConfig } from '../missionConfig.js';
+import { createMissionState } from '../sim/countdown.js';
 import { createFlightState } from '../sim/flight.js';
 
 import { CanonicalWriter, encodeFlightState, hashFlightState, hashMissionState } from './hash.js';
@@ -117,27 +117,27 @@ describe('flight state hashing', () => {
 });
 
 describe('mission state hashing', () => {
-  const checklist = checklistData as ChecklistDef;
+  const config = createMissionConfig();
 
   it('covers the countdown machine as well as the flight', () => {
-    const baseline = hashMissionState(createMissionState(checklist));
+    const baseline = hashMissionState(createMissionState(config));
 
-    const armed = createMissionState(checklist);
+    const armed = createMissionState(config);
     armed.phase = 'ARMED';
     expect(hashMissionState(armed)).not.toBe(baseline);
 
-    const switched = createMissionState(checklist);
+    const switched = createMissionState(config);
     switched.checklist[0] = true;
     expect(hashMissionState(switched)).not.toBe(baseline);
 
-    const counting = createMissionState(checklist);
+    const counting = createMissionState(config);
     counting.ignitionTick = 320;
     expect(hashMissionState(counting)).not.toBe(baseline);
   });
 
   it('notices an event appearing or going missing', () => {
-    const baseline = hashMissionState(createMissionState(checklist));
-    const withEvent = createMissionState(checklist);
+    const baseline = hashMissionState(createMissionState(config));
+    const withEvent = createMissionState(config);
     withEvent.events.push({ tick: 1, missionTime_s: 0, type: 'CHECKLIST', message: 'x' });
     expect(hashMissionState(withEvent)).not.toBe(baseline);
   });
@@ -145,10 +145,70 @@ describe('mission state hashing', () => {
   it('ignores the wording of an event message', () => {
     // Log text is presentation. Rewording a line must not invalidate every
     // stored replay, but the event still has to exist.
-    const first = createMissionState(checklist);
+    const first = createMissionState(config);
     first.events.push({ tick: 1, missionTime_s: 0, type: 'MECO', message: 'MECO — cutoff' });
-    const second = createMissionState(checklist);
+    const second = createMissionState(config);
     second.events.push({ tick: 1, missionTime_s: 0, type: 'MECO', message: 'main engine off' });
     expect(hashMissionState(second)).toBe(hashMissionState(first));
+  });
+});
+
+describe('the hash covers what the player can learn, and when', () => {
+  /**
+   * A symptom's drawn delay decides the moment the reading appears — which is
+   * the moment the candidate list narrows, and the whole basis of the
+   * wait-versus-diagnose decision. It went unhashed once; a change to the
+   * delay bands then moved ten of eleven fixture hashes not at all.
+   */
+  it('moves when a symptom would become visible at a different time', async () => {
+    const config = createMissionConfig();
+    const state = createMissionState(config);
+    state.diagnosis.anomalies.anomalies.push({
+      id: 'anomaly-1',
+      causeId: 'cause_bus_short',
+      onsetTick: 400,
+      escalationTick: 1600,
+      resolvedTick: -1,
+      escalatedTick: -1,
+      applied: [],
+      spawnedBy: null,
+      symptoms: [
+        { symptomId: 'sym_voltage_drop', strength: 0.7, delay_s: 0 },
+        { symptomId: 'sym_telemetry_gaps', strength: 0.5, delay_s: 30 },
+      ],
+    });
+
+    const before = await hashMissionState(state);
+    state.diagnosis.anomalies.anomalies[0] = {
+      ...state.diagnosis.anomalies.anomalies[0],
+      symptoms: [
+        { symptomId: 'sym_voltage_drop', strength: 0.7, delay_s: 0 },
+        { symptomId: 'sym_telemetry_gaps', strength: 0.5, delay_s: 12 },
+      ],
+    };
+    expect(await hashMissionState(state)).not.toBe(before);
+  });
+
+  it('moves when a symptom reads differently, at the same time', async () => {
+    const config = createMissionConfig();
+    const state = createMissionState(config);
+    state.diagnosis.anomalies.anomalies.push({
+      id: 'anomaly-1',
+      causeId: 'cause_bus_short',
+      onsetTick: 400,
+      escalationTick: 1600,
+      resolvedTick: -1,
+      escalatedTick: -1,
+      applied: [],
+      spawnedBy: null,
+      symptoms: [{ symptomId: 'sym_voltage_drop', strength: 0.7, delay_s: 0 }],
+    });
+
+    const before = await hashMissionState(state);
+    state.diagnosis.anomalies.anomalies[0] = {
+      ...state.diagnosis.anomalies.anomalies[0],
+      symptoms: [{ symptomId: 'sym_voltage_drop', strength: 0.36, delay_s: 0 }],
+    };
+    expect(await hashMissionState(state)).not.toBe(before);
   });
 });

@@ -9,8 +9,7 @@
 import { describe, expect, it } from 'vitest';
 
 import checklistData from '../data/checklist.json' with { type: 'json' };
-import pitchData from '../data/pitchProgram.json' with { type: 'json' };
-import rocketData from '../data/rocket.json' with { type: 'json' };
+import { createMissionConfig } from '../missionConfig.js';
 
 import {
   COUNTDOWN_PHASES,
@@ -25,18 +24,17 @@ import {
 } from './countdown.js';
 import { Engine } from './engine.js';
 import { missionTime_s } from './flight.js';
-import type { PitchProgram } from './physics/ascentProgram.js';
-import type { RocketDef } from './physics/thrust.js';
 
 const checklist = checklistData as ChecklistDef;
-const config = {
-  rocket: rocketData as RocketDef,
-  pitchProgram: pitchData as PitchProgram,
-  checklist,
-};
+/**
+ * A mission with no anomalies. These tests are about the countdown machine,
+ * and an unattended anomaly now cascades into a lost vehicle — which would
+ * cut the ascent short and tell us nothing about the sequence.
+ */
+const config = createMissionConfig({ missionKey: 'mission-78' });
 
 function createEngine(): Engine<MissionState> {
-  return new Engine(createMissionSimulation(config), createMissionState(checklist));
+  return new Engine(createMissionSimulation(config), createMissionState(config));
 }
 
 function completeChecklist(engine: Engine<MissionState>): void {
@@ -57,7 +55,7 @@ function flyNominalMission(ticks = 12000): MissionState {
 
 describe('hold', () => {
   it('starts in HOLD with every switch at NO GO', () => {
-    const state = createMissionState(checklist);
+    const state = createMissionState(config);
     expect(state.phase).toBe('HOLD');
     expect(state.checklist).toHaveLength(checklist.items.length);
     expect(allChecklistItemsGo(state)).toBe(false);
@@ -106,7 +104,7 @@ describe('hold', () => {
   });
 
   it('holds the clock at zero while holding', () => {
-    expect(countdownDisplay_s(createMissionState(checklist))).toBe(0);
+    expect(countdownDisplay_s(createMissionState(config))).toBe(0);
   });
 });
 
@@ -177,7 +175,7 @@ describe('the full sequence', () => {
 
   it('passes through every phase in order, exactly once', () => {
     const milestones = state.events
-      .filter((event) => event.type !== 'CHECKLIST')
+      .filter((event) => COUNTDOWN_PHASES.includes(event.type as CountdownPhase))
       .map((event) => event.type);
     expect(milestones).toEqual([
       'ARMED',
@@ -193,7 +191,7 @@ describe('the full sequence', () => {
   it('never moves a phase backwards', () => {
     let highest = -1;
     for (const event of state.events) {
-      if (event.type === 'CHECKLIST') continue;
+      if (!COUNTDOWN_PHASES.includes(event.type as CountdownPhase)) continue;
       const index = phaseIndex(event.type as CountdownPhase);
       expect(index).toBeGreaterThan(highest);
       highest = index;
@@ -255,5 +253,49 @@ describe('milestones follow the physics, not a schedule', () => {
     engine.runTicks(2000);
     expect(engine.state.flight.propellantRemaining_kg).toBeGreaterThan(0);
     expect(engine.state.events.some((event) => event.type === 'MECO')).toBe(false);
+  });
+});
+
+describe('a mission is pinned by its seed and its key', () => {
+  /**
+   * §5.4's first retry path promises the identical run, and §8.2 rule 5
+   * promises that a re-roll is surgical. Both rest on one property: the seed
+   * and the mission key decide the crisis, and nothing else does.
+   *
+   * This is asserted at the mission level rather than at `planAnomalies`,
+   * because that is the level Phase 2's configurator will rebuild. A test on
+   * the helper would keep passing while the mission it feeds changed shape.
+   */
+  function flyBriefly(overrides: Parameters<typeof createMissionConfig>[0]): MissionState {
+    const missionConfig = createMissionConfig(overrides);
+    const engine = new Engine(
+      createMissionSimulation(missionConfig),
+      createMissionState(missionConfig),
+    );
+    for (let index = 0; index < checklist.items.length; index += 1) {
+      engine.submit('toggleChecklist', { index });
+    }
+    engine.submit('arm', null);
+    engine.runTicks(6000);
+    return engine.state;
+  }
+
+  /** The anomalies a run produced, in the order the world announced them. */
+  const crisisOf = (state: MissionState): string[] =>
+    state.diagnosis.anomalies.anomalies.map(
+      (anomaly) => `${anomaly.causeId}@${anomaly.onsetTick}`,
+    );
+
+  it('replays the same crisis for the same seed and key', () => {
+    const first = flyBriefly({ seed: 42, missionKey: 'mission-1' });
+    const second = flyBriefly({ seed: 42, missionKey: 'mission-1' });
+    expect(crisisOf(second)).toEqual(crisisOf(first));
+    expect(crisisOf(first).length).toBeGreaterThan(0);
+  });
+
+  it('rolls a different crisis for a different key, and for a different seed', () => {
+    const base = crisisOf(flyBriefly({ seed: 42, missionKey: 'mission-1' }));
+    expect(crisisOf(flyBriefly({ seed: 42, missionKey: 'mission-2' }))).not.toEqual(base);
+    expect(crisisOf(flyBriefly({ seed: 43, missionKey: 'mission-1' }))).not.toEqual(base);
   });
 });

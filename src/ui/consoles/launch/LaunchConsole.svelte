@@ -4,88 +4,37 @@
    *
    * Reads a telemetry snapshot and turns player input into commands. It never
    * touches simulation state — that boundary is what keeps a replay honest.
+   * The masthead, the tab bar and the keyboard live in the shell, so this file
+   * is only the panels.
    */
-  import { onMount } from 'svelte';
-
-  import { Mission, checklistItems, maxDynamicPressureLimit_Pa, targetOrbit } from '../../mission.svelte.js';
-  import { resolveHotkey } from '../../hotkeys.js';
-  import { isMuted, setMuted, unlockAudio } from '../../audio/synth.js';
+  import {
+    Mission,
+    checklistItems,
+    maxDynamicPressureLimit_Pa,
+    risk,
+    targetOrbit,
+  } from '../../mission.svelte.js';
+  import { panelActionHotkey } from '../../hotkeys.js';
   import {
     formatAltitude,
     formatDynamicPressure,
     formatG,
-    formatMissionClock,
     formatSpeed,
   } from '../../format.js';
   import EventLog from '../../widgets/EventLog.svelte';
   import Gauge from '../../widgets/Gauge.svelte';
   import OrbitMap from '../../widgets/OrbitMap.svelte';
-  import SevenSeg from '../../widgets/SevenSeg.svelte';
   import ToggleSwitch from '../../widgets/ToggleSwitch.svelte';
 
-  const mission = new Mission();
-  const telemetry = $derived(mission.telemetry);
+  interface Props {
+    mission: Mission;
+  }
 
-  let muted = $state(false);
-  let resumed = $state(false);
+  const { mission }: Props = $props();
+  const telemetry = $derived(mission.telemetry);
 
   /** Altitude gauge tops out a little above the target, so orbit is near full. */
   const ALTITUDE_MAX_M = targetOrbit.apoapsisAltitude_m * 1.4;
-
-  onMount(() => {
-    resumed = mission.resume();
-    mission.start();
-
-    const onVisibility = (): void => {
-      // Web tabs do get closed (concept §8.2 rule 9).
-      if (document.visibilityState === 'hidden') mission.save();
-    };
-    document.addEventListener('visibilitychange', onVisibility);
-
-    return () => {
-      mission.stop();
-      document.removeEventListener('visibilitychange', onVisibility);
-    };
-  });
-
-  function onKeydown(event: KeyboardEvent): void {
-    if (event.metaKey || event.ctrlKey || event.altKey) return;
-    const action = resolveHotkey(event.key);
-    if (action === null) return;
-    event.preventDefault();
-    unlockAudio();
-
-    switch (action.kind) {
-      case 'toggleChecklist':
-        if (action.index < checklistItems.length) mission.toggleChecklist(action.index);
-        return;
-      case 'arm':
-        mission.arm();
-        return;
-      case 'togglePause':
-        mission.togglePause();
-        return;
-      case 'warpUp':
-        mission.warpUp();
-        return;
-      case 'warpDown':
-        mission.warpDown();
-        return;
-    }
-  }
-
-  function toggleMute(): void {
-    muted = !muted;
-    setMuted(muted);
-  }
-
-  function restart(): void {
-    mission.clearSave();
-    mission.reset();
-    resumed = false;
-  }
-
-  const phaseLabel = $derived(telemetry.phase.replace('_', ' '));
 
   /**
    * A trajectory whose periapsis is inside the planet is an arc, not an orbit.
@@ -110,38 +59,7 @@
   });
 </script>
 
-<svelte:window onkeydown={onKeydown} />
-
-<main class="console">
-  <header class="masthead">
-    <div class="identity">
-      <h1>GO<span>/</span>NOGO</h1>
-      <p>LAUNCH CONSOLE · GN-1 VANGUARD</p>
-    </div>
-
-    <div class="clock">
-      <SevenSeg value={formatMissionClock(telemetry.clock_s)} tone={telemetry.clock_s < 0 ? 'amber' : 'green'} />
-    </div>
-
-    <div class="status">
-      <span class="phase" class:live={telemetry.phase !== 'HOLD'}>{phaseLabel}</span>
-      <div class="controls">
-        <button type="button" onclick={() => mission.togglePause()}>
-          {telemetry.paused ? 'RESUME' : 'PAUSE'} <kbd>Space</kbd>
-        </button>
-        <button type="button" onclick={() => mission.warpDown()} disabled={telemetry.warp === 1}>−</button>
-        <span class="warp">{telemetry.warp}×</span>
-        <button type="button" onclick={() => mission.warpUp()}>+</button>
-        <button type="button" onclick={toggleMute}>{muted ? 'SOUND OFF' : 'SOUND ON'}</button>
-        <button type="button" onclick={restart}>RESTART</button>
-      </div>
-    </div>
-  </header>
-
-  {#if resumed}
-    <p class="resumed">Resumed from the last auto-save.</p>
-  {/if}
-
+<div class="launch">
   <div class="grid">
     <section class="panel checklist">
       <h2>PRELAUNCH CHECKLIST</h2>
@@ -149,7 +67,7 @@
         {#each checklistItems as item, index (item.id)}
           <ToggleSwitch
             label={item.label}
-            hotkey={item.hotkey}
+            hotkey={panelActionHotkey(index)}
             checked={telemetry.checklist[index]}
             disabled={telemetry.phase !== 'HOLD'}
             onToggle={() => mission.toggleChecklist(index)}
@@ -159,7 +77,7 @@
 
       <button
         type="button"
-        class="launch"
+        class="launch-button"
         class:ready={telemetry.readyToArm}
         disabled={!telemetry.readyToArm}
         onclick={() => mission.arm()}
@@ -167,6 +85,24 @@
         {launchButtonLabel}
         {#if telemetry.phase === 'HOLD'}<kbd>Enter</kbd>{/if}
       </button>
+
+      {#if telemetry.phase === 'HOLD' || telemetry.phase === 'ARMED'}
+        <div class="risk">
+          <h3>
+            RISK BUDGET
+            <span class="total">{(risk.lossOfMission * 100).toFixed(1)} % LOM</span>
+          </h3>
+          <ul>
+            {#each risk.lines as line (line.label)}
+              <li>
+                <span>{line.label}</span>
+                <span class="value">{(line.contribution * 100).toFixed(1)} %</span>
+              </li>
+            {/each}
+          </ul>
+          <p>Static this phase — the same number every flight, and the post-mortem quotes it back.</p>
+        </div>
+      {/if}
     </section>
 
     <section class="panel telemetry">
@@ -230,122 +166,15 @@
       <EventLog events={telemetry.events} />
     </section>
   </div>
-</main>
+</div>
 
 <style>
-  .console {
-    min-height: 100vh;
-    padding: 1.1rem 1.4rem 1.4rem;
+  .launch {
     display: flex;
     flex-direction: column;
     gap: 0.9rem;
-    background:
-      radial-gradient(120% 80% at 50% 0%, rgba(40, 90, 78, 0.22), transparent 70%),
-      #070b09;
-    color: #cfe8dc;
-    font-family: ui-monospace, 'SFMono-Regular', 'Menlo', 'Consolas', monospace;
-  }
-
-  .masthead {
-    display: grid;
-    grid-template-columns: 1fr auto 1fr;
-    align-items: center;
-    gap: 1rem;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-    padding-bottom: 0.8rem;
-  }
-
-  h1 {
-    margin: 0;
-    font-size: 1.05rem;
-    letter-spacing: 0.34em;
-    color: #e8fff2;
-  }
-
-  h1 span {
-    opacity: 0.4;
-  }
-
-  .identity p {
-    margin: 0.2rem 0 0;
-    font-size: 0.6rem;
-    letter-spacing: 0.22em;
-    opacity: 0.45;
-  }
-
-  .clock {
-    display: flex;
-    justify-content: center;
-  }
-
-  .status {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-end;
-    gap: 0.45rem;
-  }
-
-  .phase {
-    font-size: 0.78rem;
-    letter-spacing: 0.24em;
-    padding: 0.18rem 0.6rem;
-    border: 1px solid rgba(255, 255, 255, 0.14);
-    border-radius: 2px;
-    opacity: 0.7;
-  }
-
-  .phase.live {
-    color: #6dfcae;
-    border-color: rgba(109, 252, 174, 0.5);
-    opacity: 1;
-    box-shadow: 0 0 12px rgba(109, 252, 174, 0.18);
-  }
-
-  .controls {
-    display: flex;
-    align-items: center;
-    gap: 0.35rem;
-  }
-
-  .warp {
-    font-size: 0.7rem;
-    min-width: 2rem;
-    text-align: center;
-    opacity: 0.7;
-  }
-
-  button {
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.12);
-    border-radius: 2px;
-    color: inherit;
-    font: inherit;
-    font-size: 0.63rem;
-    letter-spacing: 0.12em;
-    padding: 0.3rem 0.55rem;
-    cursor: pointer;
-  }
-
-  button:hover:not(:disabled) {
-    border-color: rgba(109, 252, 174, 0.45);
-  }
-
-  button:disabled {
-    opacity: 0.4;
-    cursor: default;
-  }
-
-  kbd {
-    font: inherit;
-    font-size: 0.85em;
-    opacity: 0.45;
-  }
-
-  .resumed {
-    margin: 0;
-    font-size: 0.68rem;
-    color: #ffc25c;
-    opacity: 0.8;
+    flex: 1;
+    min-height: 0;
   }
 
   .grid {
@@ -355,6 +184,59 @@
     grid-template-rows: 1fr auto;
     gap: 0.9rem;
     min-height: 0;
+  }
+
+  .risk {
+    margin-top: 0.85rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    padding-top: 0.6rem;
+  }
+
+  .risk h3 {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.6rem;
+    margin: 0 0 0.45rem;
+    font-size: 0.56rem;
+    letter-spacing: 0.22em;
+    opacity: 0.5;
+  }
+
+  .risk .total {
+    font-size: 0.78rem;
+    letter-spacing: 0.08em;
+    color: #ffc25c;
+    opacity: 1;
+  }
+
+  .risk ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.22rem;
+  }
+
+  .risk li {
+    display: flex;
+    justify-content: space-between;
+    gap: 0.8rem;
+    font-size: 0.62rem;
+    opacity: 0.72;
+  }
+
+  .risk .value {
+    color: #ffc25c;
+    opacity: 0.85;
+  }
+
+  .risk p {
+    margin: 0.5rem 0 0;
+    font-size: 0.56rem;
+    line-height: 1.5;
+    opacity: 0.35;
   }
 
   .panel {
@@ -382,7 +264,7 @@
     gap: 0.35rem;
   }
 
-  .launch {
+  .launch-button {
     margin-top: auto;
     padding: 0.8rem;
     font-size: 0.72rem;
@@ -391,9 +273,20 @@
     align-items: center;
     justify-content: center;
     gap: 0.6rem;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 2px;
+    color: inherit;
+    font-family: inherit;
+    cursor: pointer;
   }
 
-  .launch.ready {
+  .launch-button:disabled {
+    opacity: 0.4;
+    cursor: default;
+  }
+
+  .launch-button.ready {
     border-color: rgba(109, 252, 174, 0.6);
     color: #6dfcae;
     background: rgba(109, 252, 174, 0.07);
@@ -404,6 +297,12 @@
     50% {
       box-shadow: 0 0 18px rgba(109, 252, 174, 0.25);
     }
+  }
+
+  kbd {
+    font: inherit;
+    font-size: 0.85em;
+    opacity: 0.45;
   }
 
   .gauges {
@@ -485,16 +384,6 @@
     .grid {
       grid-template-columns: 1fr;
       grid-template-rows: none;
-    }
-
-    .masthead {
-      grid-template-columns: 1fr;
-      justify-items: center;
-      text-align: center;
-    }
-
-    .status {
-      align-items: center;
     }
   }
 </style>

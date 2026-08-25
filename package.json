@@ -11,7 +11,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint:graph": "node --experimental-strip-types tools/graphLint.ts data/causes.json"
+    "lint:graph": "node --experimental-strip-types tools/graphLint.ts src/data/causes.json"
   },
   "devDependencies": {
     "@sveltejs/vite-plugin-svelte": "^6.2.4",
