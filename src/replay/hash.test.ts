@@ -152,3 +152,63 @@ describe('mission state hashing', () => {
     expect(hashMissionState(second)).toBe(hashMissionState(first));
   });
 });
+
+describe('the hash covers what the player can learn, and when', () => {
+  /**
+   * A symptom's drawn delay decides the moment the reading appears — which is
+   * the moment the candidate list narrows, and the whole basis of the
+   * wait-versus-diagnose decision. It went unhashed once; a change to the
+   * delay bands then moved ten of eleven fixture hashes not at all.
+   */
+  it('moves when a symptom would become visible at a different time', async () => {
+    const config = createMissionConfig();
+    const state = createMissionState(config);
+    state.diagnosis.anomalies.anomalies.push({
+      id: 'anomaly-1',
+      causeId: 'cause_bus_short',
+      onsetTick: 400,
+      escalationTick: 1600,
+      resolvedTick: -1,
+      escalatedTick: -1,
+      applied: [],
+      spawnedBy: null,
+      symptoms: [
+        { symptomId: 'sym_voltage_drop', strength: 0.7, delay_s: 0 },
+        { symptomId: 'sym_telemetry_gaps', strength: 0.5, delay_s: 30 },
+      ],
+    });
+
+    const before = await hashMissionState(state);
+    state.diagnosis.anomalies.anomalies[0] = {
+      ...state.diagnosis.anomalies.anomalies[0],
+      symptoms: [
+        { symptomId: 'sym_voltage_drop', strength: 0.7, delay_s: 0 },
+        { symptomId: 'sym_telemetry_gaps', strength: 0.5, delay_s: 12 },
+      ],
+    };
+    expect(await hashMissionState(state)).not.toBe(before);
+  });
+
+  it('moves when a symptom reads differently, at the same time', async () => {
+    const config = createMissionConfig();
+    const state = createMissionState(config);
+    state.diagnosis.anomalies.anomalies.push({
+      id: 'anomaly-1',
+      causeId: 'cause_bus_short',
+      onsetTick: 400,
+      escalationTick: 1600,
+      resolvedTick: -1,
+      escalatedTick: -1,
+      applied: [],
+      spawnedBy: null,
+      symptoms: [{ symptomId: 'sym_voltage_drop', strength: 0.7, delay_s: 0 }],
+    });
+
+    const before = await hashMissionState(state);
+    state.diagnosis.anomalies.anomalies[0] = {
+      ...state.diagnosis.anomalies.anomalies[0],
+      symptoms: [{ symptomId: 'sym_voltage_drop', strength: 0.36, delay_s: 0 }],
+    };
+    expect(await hashMissionState(state)).not.toBe(before);
+  });
+});

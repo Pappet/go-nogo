@@ -111,8 +111,10 @@ export function encodeMissionState(state: MissionState, writer: CanonicalWriter)
 /**
  * Writes the diagnosis runtime.
  *
- * Anomalies are written in full rather than counted: a desync that moved one
- * anomaly's onset by a tick, or resolved the wrong one, has to be caught. The
+ * Anomalies are written in full rather than counted, down to their drawn
+ * symptom instances: a desync that moved one anomaly's onset by a tick,
+ * resolved the wrong one, or shifted when a reading becomes visible, has to be
+ * caught — the last one changes what the player can know and when. The
  * schedule and results are counted with their identifying fields for the same
  * reason — a queue that drifted apart between two runs is exactly the failure
  * the 600-tick sampling exists to localise.
@@ -140,6 +142,16 @@ export function encodeDiagnosisState(state: DiagnosisState, writer: CanonicalWri
       writer.string(applied.measureId);
       writer.int32(applied.tick, 'applied.tick');
       writer.boolean(applied.correct);
+    }
+    // The symptom instances belong in here. They are drawn state, they decide
+    // when the player learns anything, and without them a change to the delay
+    // bands moves the whole game while leaving the replay hashes alone — which
+    // is exactly the silent drift the fixture exists to catch.
+    writer.int32(anomaly.symptoms.length, 'anomaly.symptoms.length');
+    for (const symptom of anomaly.symptoms) {
+      writer.string(symptom.symptomId);
+      writer.float64(symptom.strength, 'symptom.strength');
+      writer.float64(symptom.delay_s, 'symptom.delay_s');
     }
   }
   writer.int32(state.anomalies.nextChainSerial, 'anomalies.nextChainSerial');
