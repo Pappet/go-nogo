@@ -111,6 +111,12 @@ export interface MissionConfigInput extends FlightConfig {
   readonly seed: number;
   readonly missionKey: string;
   readonly pauseModel?: PauseModelKind;
+  /**
+   * How likely each cause is, given the vehicle that was configured (§4, §5.4).
+   * Passed in rather than computed here: the economy layer owns the hardware,
+   * and `src/sim` reads a plain table so it can be flown without one.
+   */
+  readonly occurrenceByCause?: Readonly<Record<string, number>>;
 }
 
 export function createMissionState(config: MissionConfigInput): MissionState {
@@ -281,6 +287,7 @@ export function createMissionSimulation(config: MissionConfigInput): Simulation<
         config.seed,
         config.missionKey,
         state.flight.liftoffTick,
+        config.occurrenceByCause,
       );
     }
 

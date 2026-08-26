@@ -2,7 +2,8 @@
   "_schema_version": "1.1",
   "_meta": {
     "description": "Cause Graph v1 (Phase 1 Playtest)",
-    "design_freeze": "v4"
+    "design_freeze": "v4",
+    "lethality_note": "lethality is the share of this anomaly's occurrences that end the mission, all told — it already accounts for the crew usually catching it, and for escalation spawning a chain that gives a second, shorter window to abort. It is what §5.4's risk budget weights by, and it is deliberately not the same number as the occurrence rate: occurrence decides how often the ENGINEERING console opens (§5.6's tension budget), lethality decides what the player is accepting when they launch. While the two were one number, an eventful mission and a survivable one could not both exist."
   },
   "symptoms": {
     "sym_pressure_drop": {
@@ -53,7 +54,8 @@
         }
       ],
       "escalates_to": "chain_flameout",
-      "escalation_s": 55
+      "escalation_s": 55,
+      "lethality": 0.1
     },
     "cause_prop_leak": {
       "title": "Propellant leak (Cryo)",
@@ -76,7 +78,8 @@
         }
       ],
       "escalates_to": "chain_flameout",
-      "escalation_s": 55
+      "escalation_s": 55,
+      "lethality": 0.12
     },
     "cause_sensor_defective": {
       "title": "Pressure sensor defective / Measurement error",
@@ -98,7 +101,8 @@
         }
       ],
       "escalates_to": "chain_icing",
-      "escalation_s": 45
+      "escalation_s": 45,
+      "lethality": 0.04
     },
     "cause_bus_short": {
       "title": "Short circuit in power bus",
@@ -120,7 +124,8 @@
         }
       ],
       "escalates_to": "chain_icing",
-      "escalation_s": 60
+      "escalation_s": 60,
+      "lethality": 0.05
     },
     "chain_icing": {
       "title": "Cascading failure: Cryo valve freezing",

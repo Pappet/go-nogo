@@ -286,16 +286,21 @@ describe('a mission is pinned by its seed and its key', () => {
       (anomaly) => `${anomaly.causeId}@${anomaly.onsetTick}`,
     );
 
+  // A mission that actually has a crisis to replay. Since the hardware decides
+  // occurrence, a good few mission keys fly quietly — which is the point of the
+  // configurator, and useless for asserting that a crisis reproduces.
+  const EVENTFUL = 'mission-6';
+
   it('replays the same crisis for the same seed and key', () => {
-    const first = flyBriefly({ seed: 42, missionKey: 'mission-1' });
-    const second = flyBriefly({ seed: 42, missionKey: 'mission-1' });
+    const first = flyBriefly({ seed: 42, missionKey: EVENTFUL });
+    const second = flyBriefly({ seed: 42, missionKey: EVENTFUL });
     expect(crisisOf(second)).toEqual(crisisOf(first));
     expect(crisisOf(first).length).toBeGreaterThan(0);
   });
 
   it('rolls a different crisis for a different key, and for a different seed', () => {
-    const base = crisisOf(flyBriefly({ seed: 42, missionKey: 'mission-1' }));
-    expect(crisisOf(flyBriefly({ seed: 42, missionKey: 'mission-2' }))).not.toEqual(base);
-    expect(crisisOf(flyBriefly({ seed: 43, missionKey: 'mission-1' }))).not.toEqual(base);
+    const base = crisisOf(flyBriefly({ seed: 42, missionKey: EVENTFUL }));
+    expect(crisisOf(flyBriefly({ seed: 42, missionKey: 'mission-7' }))).not.toEqual(base);
+    expect(crisisOf(flyBriefly({ seed: 43, missionKey: EVENTFUL }))).not.toEqual(base);
   });
 });

@@ -7,7 +7,7 @@
  */
 import { describe, expect, it } from 'vitest';
 
-import { phaseExposure, qaLevels } from '../missionConfig.js';
+import { defaultVehicle, occurrenceFor, partLethality, phaseExposure, qaLevels } from '../missionConfig.js';
 
 import { computeRiskBudget, headlineRisk, uncertainty } from './riskBudget.js';
 import { type VehicleConfig, buildDays, buildVehicle, changedSlots } from './vehicle.js';
@@ -26,7 +26,13 @@ const oneValve = vehicle({
 });
 
 const priceOf = (config: VehicleConfig, seed = 42): ReturnType<typeof computeRiskBudget> =>
-  computeRiskBudget(buildVehicle(config, qaLevels, seed), phaseExposure, DURATION_S);
+  computeRiskBudget(buildVehicle(config, qaLevels, seed), phaseExposure, DURATION_S, partLethality);
+
+const atQa = (qaLevel: VehicleConfig['slots'][number]['qaLevel']): VehicleConfig => ({
+  slots: defaultVehicle.slots.map((slot) => ({ ...slot, qaLevel })),
+});
+const expectedAnomalies = (config: VehicleConfig): number =>
+  Object.values(occurrenceFor(config, 42)).reduce((sum, probability) => sum + probability, 0);
 
 describe('the budget answers the planner', () => {
   it('reports a range, because the exact value was not paid for', () => {
@@ -155,5 +161,36 @@ describe('the vehicle the configurator edits', () => {
       units: 1,
     });
     expect(changedSlots(before, added)).toEqual(['c']);
+  });
+});
+
+describe('the hardware decides the mission', () => {
+  it('buys fewer anomalies with better parts', () => {
+    // The whole point of the configurator. If this ever stops holding, the
+    // planner is a screen that charges money and changes nothing.
+    expect(expectedAnomalies(atQa('acceptance'))).toBeLessThan(expectedAnomalies(atQa('series')));
+  });
+
+  it('keeps occurrence and lethality as different numbers', () => {
+    // They were one number, and while they were, §5.6's eventful mission and
+    // §5.4's survivable one could not both exist. A series vehicle should hand
+    // the player something on most flights and still be worth launching.
+    const anomalies = expectedAnomalies(atQa('series'));
+    const lom = headlineRisk(priceOf(atQa('series')));
+
+    expect(anomalies).toBeGreaterThan(0.5);
+    expect(lom).toBeLessThan(0.2);
+    // And the gap between them is the crew's doing, not a rounding error.
+    expect(anomalies).toBeGreaterThan(lom * 4);
+  });
+
+  it('does not make a quiet mission out of a lethal one, or the reverse', () => {
+    // A part low on the risk budget can still be the one that keeps opening
+    // the diagnosis panel: the sensor misbehaves often and rarely kills.
+    const occurrence = occurrenceFor(defaultVehicle, 42);
+    expect(occurrence.cause_sensor_defective).toBeGreaterThan(0);
+    expect(partLethality('part_pressure_sensor')).toBeLessThan(
+      partLethality('part_feed_line'),
+    );
   });
 });

@@ -14,6 +14,7 @@ import {
   defaultVehicle,
   phaseExposure,
   pitchProgram,
+  partLethality,
   qaLevels,
   rocket,
 } from '../missionConfig.js';
@@ -485,6 +486,7 @@ export class Mission {
       buildVehicle(this.vehicleConfig, qaLevels, this.config.seed),
       phaseExposure,
       rocket.nominalMissionDuration_s,
+      partLethality,
     );
   }
 

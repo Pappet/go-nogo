@@ -1,5 +1,5 @@
 {
-  "description": "The component catalogue (concept §4). A part's reliability band is what the manufacturer commits to; the value a specific unit actually has is drawn from its serial number and never stored here. Costs are in thousands.",
+  "description": "The component catalogue (concept §4). `reliabilityBand` is the probability of an anomaly-free flight for that part — not its engineering reliability. A valve that reads 0.74 is not a valve that breaks one flight in four; it is a valve that behaves oddly enough to reach the ENGINEERING console that often. What such an anomaly then costs is the cause's lethality, in causes.json. The value a specific unit actually has is drawn from its serial number and is never stored here. Costs are in thousands.",
   "qaLevels": {
     "series": {
       "title": "Series",
@@ -45,8 +45,13 @@
       "system": "prop",
       "mass_kg": 42,
       "cost": 180,
-      "reliabilityBand": [0.88, 0.98],
-      "failureCauses": ["cause_valve_sluggish"]
+      "reliabilityBand": [
+        0.62,
+        0.86
+      ],
+      "failureCauses": [
+        "cause_valve_sluggish"
+      ]
     },
     {
       "id": "part_feed_line",
@@ -54,8 +59,13 @@
       "system": "prop",
       "mass_kg": 65,
       "cost": 120,
-      "reliabilityBand": [0.9, 0.99],
-      "failureCauses": ["cause_prop_leak"]
+      "reliabilityBand": [
+        0.66,
+        0.9
+      ],
+      "failureCauses": [
+        "cause_prop_leak"
+      ]
     },
     {
       "id": "part_pressure_sensor",
@@ -63,8 +73,13 @@
       "system": "avionics",
       "mass_kg": 4,
       "cost": 60,
-      "reliabilityBand": [0.86, 0.97],
-      "failureCauses": ["cause_sensor_defective"]
+      "reliabilityBand": [
+        0.64,
+        0.88
+      ],
+      "failureCauses": [
+        "cause_sensor_defective"
+      ]
     },
     {
       "id": "part_power_bus",
@@ -72,8 +87,13 @@
       "system": "power",
       "mass_kg": 88,
       "cost": 210,
-      "reliabilityBand": [0.91, 0.99],
-      "failureCauses": ["cause_bus_short"]
+      "reliabilityBand": [
+        0.65,
+        0.89
+      ],
+      "failureCauses": [
+        "cause_bus_short"
+      ]
     },
     {
       "id": "part_telemetry_tx",
@@ -81,8 +101,13 @@
       "system": "comms",
       "mass_kg": 18,
       "cost": 95,
-      "reliabilityBand": [0.89, 0.98],
-      "failureCauses": ["cause_bus_short"]
+      "reliabilityBand": [
+        0.66,
+        0.9
+      ],
+      "failureCauses": [
+        "cause_bus_short"
+      ]
     }
   ]
 }

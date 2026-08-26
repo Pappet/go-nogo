@@ -79,14 +79,21 @@ export function drawReliability(
   return band[0] + hashUnit(seed, serialNo, 'reliability') * (band[1] - band[0]);
 }
 
-/** The band a QA level narrows the manufacturer's promise down to, centred. */
+/**
+ * The band that survives a screening test.
+ *
+ * Screening removes the bad tail and nothing else: §4.1's "outliers screened
+ * out" cuts from below, so the surviving population runs from the raised floor
+ * up to the manufacturer's original ceiling. Narrowing the band symmetrically
+ * would take the good tail away too, and a player who paid for an acceptance
+ * test would watch their headline risk go *up* — which is not what the test
+ * does and not what §4.1 sells.
+ */
 export function tightenedBand(
   band: readonly [number, number],
   factor: number,
 ): readonly [number, number] {
-  const centre = (band[0] + band[1]) / 2;
-  const half = ((band[1] - band[0]) * factor) / 2;
-  return [centre - half, centre + half];
+  return [band[1] - (band[1] - band[0]) * factor, band[1]];
 }
 
 /** The serial a slot's n-th unit carries. Stable across runs by construction. */
@@ -141,7 +148,7 @@ export function buildPart(
     visibleBand: qa.revealsExactValue
       ? [effectiveReliability, effectiveReliability]
       : passedScreening
-        ? [Math.max(target[0], def.reliabilityBand[0]), Math.min(target[1], def.reliabilityBand[1])]
+        ? target
         : def.reliabilityBand,
     effectiveReliability,
     wear: wear + qa.wearAdded,

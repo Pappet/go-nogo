@@ -19,8 +19,8 @@ import { type CauseGraphData, loadCauseGraph } from './sim/diagnosis/causeGraph.
 import type { PriorSettings } from './sim/diagnosis/priors.js';
 import type { PitchProgram } from './sim/physics/ascentProgram.js';
 import type { RocketDef } from './sim/physics/thrust.js';
-import type { PhaseExposure } from './economy/riskBudget.js';
-import type { VehicleConfig } from './economy/vehicle.js';
+import { type PhaseExposure, causeProbabilities } from './economy/riskBudget.js';
+import { type VehicleConfig, buildVehicle } from './economy/vehicle.js';
 import type { PartDef, QaLevelTable } from './sim/parts/partInstance.js';
 import type { AnomalySettings } from './sim/systems/anomaly.js';
 
@@ -37,6 +37,9 @@ export const phaseExposure = riskData as PhaseExposure;
 export const defaultVehicle = vehicleData as unknown as VehicleConfig;
 export const causeGraphData = causesData as unknown as CauseGraphData;
 
+/** One loaded graph for the lookups that do not want to rebuild it each call. */
+const sharedGraph = loadCauseGraph(causeGraphData);
+
 /** The component catalogue and the QA table (§4, §4.1). */
 export const qaLevels = partsData.qaLevels as QaLevelTable;
 export const partCatalogue = partsData.parts as unknown as readonly PartDef[];
@@ -48,10 +51,46 @@ export function partDef(partId: string): PartDef {
   return found;
 }
 
-/** The default mission. `overrides` is for tests and for the replay fixtures. */
+/**
+ * How lethal a part's worst failure mode is (§5.4).
+ *
+ * The risk budget weights by this, and it is deliberately not the occurrence
+ * rate: a sensor that misbehaves on one flight in three but rarely kills
+ * anyone belongs low on the risk budget and high on the ENGINEERING console.
+ * A part is as dangerous as the worst thing it can cause.
+ */
+export function partLethality(partId: string): number {
+  return partDef(partId).failureCauses.reduce(
+    (worst, causeId) => Math.max(worst, sharedGraph.lethality(causeId)),
+    0,
+  );
+}
+
+/**
+ * How likely each cause is on a given vehicle. Composition, not simulation:
+ * `src/sim` takes the table and never learns what hardware produced it.
+ */
+export function occurrenceFor(vehicle: VehicleConfig, seed: number): Record<string, number> {
+  return causeProbabilities(
+    buildVehicle(vehicle, qaLevels, seed),
+    partDef,
+    phaseExposure,
+    rocket.nominalMissionDuration_s,
+  );
+}
+
+/**
+ * The default mission. `overrides` is for tests and for the replay fixtures.
+ *
+ * `vehicle` is consumed here rather than carried into the config: `src/sim`
+ * must not depend on the economy layer, so it receives the occurrence table
+ * the vehicle produces and never learns what hardware produced it.
+ */
 export function createMissionConfig(
-  overrides: Partial<MissionConfigInput> = {},
+  overrides: Partial<MissionConfigInput> & { readonly vehicle?: VehicleConfig } = {},
 ): MissionConfigInput {
+  const { vehicle = defaultVehicle, ...rest } = overrides;
+  const seed = rest.seed ?? 42;
   return {
     rocket,
     pitchProgram,
@@ -59,8 +98,9 @@ export function createMissionConfig(
     causeGraph: loadCauseGraph(causeGraphData),
     anomalySettings,
     priorSettings,
-    seed: 42,
+    seed,
     missionKey: 'mission-1',
-    ...overrides,
+    occurrenceByCause: occurrenceFor(vehicle, seed),
+    ...rest,
   };
 }

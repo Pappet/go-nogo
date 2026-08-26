@@ -4,7 +4,7 @@
   "seed": 42,
   "configuration": {
     "rocketName": "GN-1 Vanguard",
-    "missionKey": "mission-1"
+    "missionKey": "mission-6"
   },
   "commands": [
     {
@@ -51,87 +51,87 @@
   "stateHashes": [
     {
       "tick": 0,
-      "sha256": "627ef4752ea145f5bd7672ed9f867ba3c55d48883d4a08552ca2e5e61f47a12b"
+      "sha256": "1e8d6b6574f8552eb91ce87c748b1b643bdd25570b88a42ca22f656fa110563e"
     },
     {
       "tick": 600,
-      "sha256": "351d81ea229b8d651d2146a6e3e0f319b61ba1f95a9bacdef9a7a0916b968e0f"
+      "sha256": "e88558804519fbfbda0cba9b5e2f94fa0617c604451d701902665c76d22eda41"
     },
     {
       "tick": 1200,
-      "sha256": "fcc962b6e23f3bb8fc10cbaffab33659c72c44aeb87b8819448793b2345681b9"
+      "sha256": "b327661ce0efc6407f9fde24b616f1ecfd8b6b39a41ab53aff69d6e3e35d465c"
     },
     {
       "tick": 1800,
-      "sha256": "bcd170f3d16296e160bcfb120fc5adc4753951357ec87afbb8f49ab3904b9a3c"
+      "sha256": "509c08ffd0cd74c2b0ab09e0723af79a9205df67ecf97140711df9fbf3958323"
     },
     {
       "tick": 2400,
-      "sha256": "13bad8bbc247289fc16d7155be549ccbcb9b87f5b2c88293d5c560c398fc7875"
+      "sha256": "123e1ca722a66460bfc7e9dbdf12e340c22210f75939938d7b08d187e91f3040"
     },
     {
       "tick": 3000,
-      "sha256": "007a0957bef41917b17172e11420382e68f7862c35ecc79dfc9f2b1673ccc021"
+      "sha256": "0ac9aa91a6c18a012b420f232aee2dfb3f43be3bec515744cad659a4e24a9fc8"
     },
     {
       "tick": 3600,
-      "sha256": "f8e3b788db06ed8733b5a2c74194f8f282a77dc47193e08bfc7db1ef67eff81d"
+      "sha256": "25977eede1d486c46e608fd37274a6d8e8ac952f46d659e75558f8865633aa8e"
     },
     {
       "tick": 4200,
-      "sha256": "0c2f041e640319c0670830aca1fd858a2529870b7f1dae3e5946f11b75eb3475"
+      "sha256": "258ef2ccc3560c70a65bf4db928655001d98068f70eb4469500f58b095773598"
     },
     {
       "tick": 4800,
-      "sha256": "f1d017730a8fc6f8523ce0012069f48eac2db160ff46f6a300b2edfbc3a0dff8"
+      "sha256": "bc87c300c55b3c3d76ba99e259aa24e273970146be0fa5a1a277568889bd891a"
     },
     {
       "tick": 5400,
-      "sha256": "503435e6186242f5b6537cbb5eb4a7b2831b4d31abb28a95241dcf71c491d2dc"
+      "sha256": "80edb63674b3080b045bb3662b358ca4de594d93ebc1ccdd7d808ca0b8b9a95c"
     },
     {
       "tick": 6000,
-      "sha256": "64fb19b6a35721061ddb3cc0d231e43f43c4fe70c36290f49e0252a7e6b155ee"
+      "sha256": "5e899a68af9aab3a1ebf0572d77908f925e2148e75bc650da05ebc8f4e64d19d"
     },
     {
       "tick": 6600,
-      "sha256": "57fb1728e63ccbcbeffdcff70f8d580a7a3b5051a2ac496b361fc9aaa312a725"
+      "sha256": "2f074810af4816cfa9c5f932e649ebe5b8dfe587c1185f7e1bdd5a9f7fa8783c"
     },
     {
       "tick": 7200,
-      "sha256": "14cf63f9ea577bb8478ac8b27d3e6eeeeafa4ddfb4bfb922ad3ab06844ecbf3c"
+      "sha256": "91386843a356f5c882567281aa452090d96af63d096fb1b6b518842ad515c5ed"
     },
     {
       "tick": 7800,
-      "sha256": "f5d8c57c229ae7b962d401904fd3a8fe53f7598dc4f8778ed63670c4ba315700"
+      "sha256": "7440c50646596bd517b00ed39f682cc7f140c929ec1fd237c1f4014352da3aba"
     },
     {
       "tick": 8400,
-      "sha256": "b89c15fcb60ccd6322f8088618ccffe9063cf56abc9de40801f9c9fc996adba6"
+      "sha256": "99ef579912165b74651520481b4593d973e9c39fffde6b46f6a7221577a4c19f"
     },
     {
       "tick": 9000,
-      "sha256": "a4d4b7b4ea5939f4e91f3fab9cfbda4d174a10d1435e1f29a4239a637aadfc8b"
+      "sha256": "ba958553b9f3362f09fa84e7b1730976507681bf8dd6337570f7c691b5f61667"
     },
     {
       "tick": 9600,
-      "sha256": "1edf5d9eee9d3c52b1b30c3385e23ad17b1ff03f661bbcbe0b607e5430ec9b70"
+      "sha256": "3eef80eeefba20fd135e500e7e2456307148cf0bf40acd92bd56b68b1cf0c4c8"
     },
     {
       "tick": 10200,
-      "sha256": "70c8bd1963fb7de3aabd0c677c21b18a0d418f5d43c7bdda003aa59e5bc9168c"
+      "sha256": "77c4f61d98e43b83aa80d76aae49b0574c2883167362d4646ec02d11b778f3bb"
     },
     {
       "tick": 10800,
-      "sha256": "4c3230fe94f9340419d356cf5379cd772d5488b104fa798d13b2b8e564adddae"
+      "sha256": "a9be12043db23362d821c07eb073178c8708c9febc18d34d8c6c62bcd7890d3f"
     },
     {
       "tick": 11400,
-      "sha256": "654512e5b5ae1e6aba3ffe13c371dd817ea1db2202c25a2aa6fa6e8eece6a336"
+      "sha256": "99ec26ca7e3cf8e5df418fd0c815b4fae7628ad41fd8b4a7f2a1f6308f5edc15"
     },
     {
       "tick": 12000,
-      "sha256": "34e2ee85353f740018ba48590c71cfa902701e55b77b60f28ff8534a169ab292"
+      "sha256": "7cbe956d29f4ba6a39c43d50c0346d60b5bc56a86517ec9af05da2fd2e11bf52"
     }
   ]
 }

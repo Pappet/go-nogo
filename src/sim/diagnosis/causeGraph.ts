@@ -49,6 +49,13 @@ export interface CauseDef {
   readonly symptoms: readonly string[];
   /** Escalation window in sim seconds. */
   readonly escalation_s?: number;
+  /**
+   * Probability this anomaly ends the mission when it is not correctly
+   * diagnosed. Not 1: escalation spawns a chain, and the chain gives a second,
+   * shorter window to abort. The risk budget (§5.4) weights by this, which is
+   * what lets a mission be eventful without being usually fatal (§5.6).
+   */
+  readonly lethality?: number;
   readonly context_priors?: readonly string[];
   /** Cause that takes over when this one runs past its window (§5.3). */
   readonly escalates_to?: string;
@@ -125,6 +132,11 @@ export class CauseGraph {
     const measure = this.data.measures[measureId];
     if (measure === undefined) throw new Error(`Unknown measure '${measureId}'`);
     return measure;
+  }
+
+  /** How much of a loss-of-mission this cause is worth (§5.4). */
+  lethality(causeId: string): number {
+    return this.cause(causeId).lethality ?? 1;
   }
 
   symptom(symptomId: string): SymptomDef {

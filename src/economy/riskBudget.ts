@@ -57,11 +57,17 @@ function slotFailure(slot: BuiltSlot, exposure: number, end: 0 | 1): number {
  *
  * `duration_s` scales every exposure: the same hardware flown twice as long is
  * exposed twice as long, which is the "duration" term §5.4 asks for.
+ *
+ * `lethalityOf` is what keeps this a *loss-of-mission* estimate rather than an
+ * anomaly counter. Occurrence and lethality were one number until they were
+ * measured against each other, and while they were, §5.6's eventful mission
+ * and §5.4's 11 % could not both be true.
  */
 export function computeRiskBudget(
   vehicle: BuiltVehicle,
   exposure: PhaseExposure,
   duration_s: number,
+  lethalityOf: (partId: string) => number = () => 1,
 ): RiskBudget {
   const scale = duration_s / exposure.referenceDuration_s;
 
@@ -74,8 +80,14 @@ export function computeRiskBudget(
       units: slot.units.length,
       // Band end 1 is the optimistic reliability, so it gives the low failure
       // end. Ordered here rather than left to the caller to sort out.
-      contribution: [slotFailure(slot, systemExposure, 1), slotFailure(slot, systemExposure, 0)] as
-        readonly [number, number],
+      // Weighted by lethality: the budget is a loss-of-mission estimate, not a
+      // count of how often something will go wrong. A sensor that misbehaves
+      // on one flight in three but rarely kills anyone belongs low on this
+      // list and high on the ENGINEERING console's.
+      contribution: [
+        slotFailure(slot, systemExposure, 1) * lethalityOf(slot.partId),
+        slotFailure(slot, systemExposure, 0) * lethalityOf(slot.partId),
+      ] as readonly [number, number],
       qaLevel: slot.units[0]?.qaLevel ?? 'series',
       mass_kg: slot.mass_kg,
       cost: slot.cost,
@@ -92,6 +104,42 @@ export function computeRiskBudget(
     mass_kg: vehicle.mass_kg,
     cost: vehicle.cost,
   };
+}
+
+/**
+ * How likely each cause is to actually fire, given this vehicle.
+ *
+ * The counterpart to `computeRiskBudget`, and the one place that reads
+ * `effectiveReliability` instead of the visible band: this is the world, not
+ * the display. The player is shown an estimate; the mission gets the truth.
+ *
+ * A part maps its failure onto the causes it can produce (§4). When a slot is
+ * redundant, the cause only fires if every unit fails — the same product the
+ * budget prices, which is what makes the budget an honest forecast of this.
+ */
+export function causeProbabilities(
+  vehicle: BuiltVehicle,
+  parts: (partId: string) => { readonly failureCauses: readonly string[] },
+  exposure: PhaseExposure,
+  duration_s: number,
+): Record<string, number> {
+  const scale = duration_s / exposure.referenceDuration_s;
+  const byCause: Record<string, number> = {};
+
+  for (const slot of vehicle.slots) {
+    const systemExposure = (exposure.bySystem[slot.system] ?? 1) * scale;
+    let allFail = 1;
+    for (const unit of slot.units) {
+      allFail *= Math.min(1, (1 - unit.effectiveReliability) * systemExposure);
+    }
+    // Two slots that can produce the same cause are two independent ways for
+    // it to happen, so they combine rather than overwrite.
+    for (const causeId of parts(slot.partId).failureCauses) {
+      const already = byCause[causeId] ?? 0;
+      byCause[causeId] = 1 - (1 - already) * (1 - allFail);
+    }
+  }
+  return byCause;
 }
 
 /** The single number for the masthead, when there is only room for one. */
