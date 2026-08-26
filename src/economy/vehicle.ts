@@ -11,6 +11,7 @@
  * starts, and from there the mission only reads it.
  */
 import {
+  type PartDef,
   type PartInstance,
   type QaLevel,
   type QaLevelTable,
@@ -62,6 +63,9 @@ export interface BuiltVehicle {
  *
  * `doctrine` prices it (§6.1). Left out, the catalogue price applies — which is
  * what a test wants when it is asking about hardware rather than about money.
+ * `resolve` supplies the part definitions, so research that shifts a
+ * reliability band (§6.4) reaches the build without this module knowing that
+ * a tech tree exists.
  *
  * Each unit in a slot gets its own serial line, so a redundant pair is two
  * genuinely different parts rather than the same draw twice — which is the
@@ -73,9 +77,10 @@ export function buildVehicle(
   qaTable: QaLevelTable,
   seed: number,
   doctrine?: DoctrineDef,
+  resolve: (partId: string) => PartDef = partDef,
 ): BuiltVehicle {
   const slots = config.slots.map((choice) => {
-    const def = partDef(choice.partId);
+    const def = resolve(choice.partId);
     const units: PartInstance[] = [];
     for (let index = 0; index < Math.max(1, choice.units); index += 1) {
       units.push(buildPart(def, `${choice.slotId}/u${index}`, choice.qaLevel, qaTable, seed));

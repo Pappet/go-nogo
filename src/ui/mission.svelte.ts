@@ -12,10 +12,13 @@ import {
   createMissionConfig,
   checklist,
   defaultVehicle,
-  phaseExposure,
+  effectiveExposure,
+  effectivePartDef,
   pitchProgram,
   contracts,
   doctrineById,
+  techEffects,
+  techTree,
   doctrines,
   partLethality,
   qaLevels,
@@ -33,6 +36,13 @@ import {
   meetsRequirements,
   settleContract,
 } from '../economy/markets.js';
+import {
+  type TechState,
+  createTechState,
+  nextStep,
+  researchLevel,
+  takeFork,
+} from '../economy/techTree.js';
 import { QA_LEVELS } from '../sim/parts/partInstance.js';
 import {
   type RiskBudget,
@@ -169,6 +179,8 @@ export interface Telemetry {
   contract: Contract | null;
   /** Why the drafted vehicle would not be accepted, if it would not. */
   contractShortfall: readonly string[];
+  /** What the campaign has researched, and what it could buy next (§6.4). */
+  tech: TechState;
   /** The vehicle the planner is editing, and whether it is open. */
   plannerOpen: boolean;
   vehicle: VehicleConfig;
@@ -210,6 +222,7 @@ export class Mission {
       seed: this.campaign.seed,
       missionKey: nextMissionKey(this.campaign),
       vehicle: this.vehicleConfig,
+      tech: this.tech,
     });
   }
   /** Counts the missions this session has rolled, for the mission key. */
@@ -224,6 +237,7 @@ export class Mission {
   private doctrine: DoctrineDef = doctrines[0];
   private campaign: CampaignState = createCampaign(doctrines[0], 42, defaultVehicle);
   private contract: Contract | null = null;
+  private tech: TechState = createTechState();
   /** Set once the flown contract has been booked, so it is booked once. */
   private settled = false;
 
@@ -406,6 +420,9 @@ export class Mission {
     this.doctrine = doctrineById(doctrineId);
     this.campaign = createCampaign(this.doctrine, this.campaign.seed, this.vehicleConfig);
     this.contract = null;
+    // A doctrine is chosen once per campaign, so switching starts a new one —
+    // including its research, which was bought under the old one's prices.
+    this.tech = createTechState();
     const legal = (vehicle: VehicleConfig): VehicleConfig => ({
       slots: vehicle.slots.map((slot) => ({
         ...slot,
@@ -629,6 +646,7 @@ export class Mission {
       board: generateBoard(contracts, this.campaign, this.campaign.week),
       contract: this.contract,
       contractShortfall: this.shortfall(this.plannerOpen ? this.draft : this.vehicleConfig),
+      tech: this.tech,
       plannerOpen: this.plannerOpen,
       vehicle: this.plannerOpen ? this.draft : this.vehicleConfig,
       pendingChanges: changedSlots(this.vehicleConfig, this.draft),
@@ -652,6 +670,19 @@ export class Mission {
     ];
   }
 
+  /** Buys the next thing a branch offers, level or fork (§6.4). */
+  research(branchId: string, optionId?: string): void {
+    const branch = techTree.branches.find((entry) => entry.id === branchId);
+    if (branch === undefined) return;
+    const step = nextStep(branch, this.tech);
+    if (step === null) return;
+    if (step.kind === 'level') researchLevel(branch, this.tech);
+    else if (optionId !== undefined) takeFork(branch, this.tech, optionId);
+    // Research changes the hardware, so the mission has to be rebuilt on it.
+    this.reconfigure();
+    this.telemetry = this.snapshot();
+  }
+
   /** Takes an offer off this week's board. */
   acceptContract(templateId: string): void {
     const board = generateBoard(contracts, this.campaign, this.campaign.week);
@@ -670,15 +701,18 @@ export class Mission {
   private settleIfFlown(state: MissionState): void {
     if (this.settled || this.contract === null || !this.isOver(state)) return;
     this.settled = true;
-    settleContract(contracts, this.campaign, this.contract, !state.missionLost);
+    const outcome = settleContract(contracts, this.campaign, this.contract, !state.missionLost);
+    this.tech.data += outcome.researchData;
     this.campaign.vehicle = this.vehicleConfig;
   }
 
   /** The risk budget for a configuration, priced for this mission. */
   private riskBudget(vehicle: VehicleConfig): RiskBudget {
     return computeRiskBudget(
-      buildVehicle(vehicle, qaLevels, this.config.seed, this.doctrine),
-      phaseExposure,
+      buildVehicle(vehicle, qaLevels, this.config.seed, this.doctrine, (id) =>
+        effectivePartDef(id, techEffects(this.tech)),
+      ),
+      effectiveExposure(techEffects(this.tech)),
       rocket.nominalMissionDuration_s,
       partLethality,
     );
@@ -866,6 +900,7 @@ function emptyTelemetry(): Telemetry {
     board: [],
     contract: null,
     contractShortfall: [],
+    tech: createTechState(),
     plannerOpen: false,
     vehicle: { slots: [] },
     pendingChanges: [],

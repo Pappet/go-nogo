@@ -9,7 +9,21 @@
 import { describe, expect, it } from 'vitest';
 
 import checklistData from '../data/checklist.json' with { type: 'json' };
-import { createMissionConfig, defaultVehicle, occurrenceFor, qaLevels } from '../missionConfig.js';
+import {
+  createMissionConfig,
+  defaultVehicle,
+  occurrenceFor,
+  qaLevels,
+  rocket,
+  techEffects,
+  techTree,
+} from '../missionConfig.js';
+import {
+  type TechState,
+  createTechState,
+  researchLevel,
+  takeFork,
+} from '../economy/techTree.js';
 import { type VehicleConfig, buildVehicle } from '../economy/vehicle.js';
 
 import {
@@ -425,5 +439,59 @@ describe('a re-plan re-rolls only what it touched (§5.4)', () => {
     const single = reserveOf(base);
     expect(reserveOf(withUnits(2))).toBeLessThan(single);
     expect(reserveOf(withUnits(3))).toBeLessThan(reserveOf(withUnits(2)));
+  });
+});
+
+describe('research reaches the flight (§6.4)', () => {
+  /**
+   * A tech tree whose levels do not change a mission is a menu. Each fork has
+   * to show up somewhere the player can feel: in the Δv, in how often the
+   * console opens, or in what the risk budget says.
+   */
+  const researched = (branchId: string, forkId: string): TechState => {
+    const branch = techTree.branches.find((entry) => entry.id === branchId);
+    if (branch === undefined) throw new Error(branchId);
+    const tech = { ...createTechState(), data: 99 };
+    researchLevel(branch, tech);
+    researchLevel(branch, tech);
+    takeFork(branch, tech, forkId);
+    return tech;
+  };
+
+  it('buys Δv with the cryogenic fork and spends it on anomalies', () => {
+    const cryo = researched('branch_propulsion', 'tech_cryogenic');
+    const hyper = researched('branch_propulsion', 'tech_hypergolic');
+
+    // The Δv shows up as Isp, which is what the ascent actually integrates.
+    expect(createMissionConfig({ tech: cryo }).rocket.stages[0].ispVacuum_s).toBeGreaterThan(
+      createMissionConfig({ tech: hyper }).rocket.stages[0].ispVacuum_s,
+    );
+    // And it is paid for in propulsion anomalies.
+    expect(occurrenceFor(defaultVehicle, 42, techEffects(cryo)).cause_valve_sluggish).toBeGreaterThan(
+      occurrenceFor(defaultVehicle, 42, techEffects(hyper)).cause_valve_sluggish,
+    );
+  });
+
+  it('moves risk between avionics and comms rather than out of the vehicle', () => {
+    const onboard = techEffects(researched('branch_avionics', 'tech_flight_computer'));
+    const ground = techEffects(researched('branch_avionics', 'tech_ground_guidance'));
+
+    const sensorOnboard = occurrenceFor(defaultVehicle, 42, onboard).cause_sensor_defective;
+    const sensorGround = occurrenceFor(defaultVehicle, 42, ground).cause_sensor_defective;
+    expect(sensorOnboard).toBeGreaterThan(sensorGround);
+
+    // The bus short is the one the transmitter also feeds, so ground guidance
+    // — which leans on the downlink — has to make it worse, not better.
+    expect(occurrenceFor(defaultVehicle, 42, ground).cause_bus_short).toBeGreaterThan(
+      occurrenceFor(defaultVehicle, 42, onboard).cause_bus_short,
+    );
+  });
+
+  it('leaves an unresearched campaign exactly where it was', () => {
+    const untouched = createMissionConfig();
+    expect(untouched.rocket.stages[0].ispVacuum_s).toBe(rocket.stages[0].ispVacuum_s);
+    expect(occurrenceFor(defaultVehicle, 42)).toEqual(
+      occurrenceFor(defaultVehicle, 42, techEffects(createTechState())),
+    );
   });
 });

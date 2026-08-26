@@ -16,6 +16,7 @@ import priorData from './data/priors.json' with { type: 'json' };
 import riskData from './data/riskBudget.json' with { type: 'json' };
 import vehicleData from './data/vehicle.json' with { type: 'json' };
 import rocketData from './data/rocket.json' with { type: 'json' };
+import techTreeData from './data/techtree.json' with { type: 'json' };
 import { type ChecklistDef, type MissionConfigInput } from './sim/countdown.js';
 import { type CauseGraphData, loadCauseGraph } from './sim/diagnosis/causeGraph.js';
 import type { PriorSettings } from './sim/diagnosis/priors.js';
@@ -24,6 +25,15 @@ import type { RocketDef } from './sim/physics/thrust.js';
 import { type PhaseExposure, causeProbabilities } from './economy/riskBudget.js';
 import type { DoctrineDef } from './economy/doctrine.js';
 import type { ContractsData } from './economy/markets.js';
+import {
+  type TechEffects,
+  type TechState,
+  type TechTreeData,
+  activeEffects,
+  combineEffects,
+  createTechState,
+  shiftedBand,
+} from './economy/techTree.js';
 import { type VehicleConfig, buildVehicle } from './economy/vehicle.js';
 import type { PartDef, QaLevelTable } from './sim/parts/partInstance.js';
 import type { AnomalySettings } from './sim/systems/anomaly.js';
@@ -43,6 +53,9 @@ export const causeGraphData = causesData as unknown as CauseGraphData;
 
 /** One loaded graph for the lookups that do not want to rebuild it each call. */
 const sharedGraph = loadCauseGraph(causeGraphData);
+
+/** The tech tree, propulsion and avionics (§6.4). */
+export const techTree = techTreeData as unknown as TechTreeData;
 
 /** Markets, contract templates and the board's own numbers (§6.2). */
 export const contracts = contractData as unknown as ContractsData;
@@ -67,6 +80,37 @@ export function partDef(partId: string): PartDef {
   return found;
 }
 
+/** Everything a campaign has researched, folded into one effect (§6.4). */
+export function techEffects(tech: TechState = createTechState()): Required<TechEffects> {
+  return combineEffects(activeEffects(techTree, tech));
+}
+
+/**
+ * A part as research has left it (§6.4).
+ *
+ * The band moves, the cost moves, the identity does not — the part id and the
+ * slot are unchanged, so a campaign that researches mid-run keeps the same
+ * serial numbers and the post-mortem can still ask what that unit would have
+ * done untouched.
+ */
+export function effectivePartDef(partId: string, effects: Required<TechEffects>): PartDef {
+  const def = partDef(partId);
+  return {
+    ...def,
+    reliabilityBand: shiftedBand(def.reliabilityBand, def.system, effects),
+    cost: Math.round(def.cost * (effects.costBySystem[def.system] ?? 1)),
+  };
+}
+
+/** Phase exposure as research has left it (§5.4, §6.4). */
+export function effectiveExposure(effects: Required<TechEffects>): PhaseExposure {
+  const bySystem: Record<string, number> = { ...phaseExposure.bySystem };
+  for (const [system, factor] of Object.entries(effects.exposureBySystem)) {
+    bySystem[system] = (bySystem[system] ?? 1) * factor;
+  }
+  return { ...phaseExposure, bySystem };
+}
+
 /**
  * The launcher, carrying whatever redundancy the configuration added (§4.2).
  *
@@ -76,14 +120,22 @@ export function partDef(partId: string): PartDef {
  * hull already carries one of everything, so only the second and third unit
  * are charged; counting the whole catalogue would tax a vehicle twice.
  */
-export function withRedundancyMass(vehicle: VehicleConfig, seed: number): RocketDef {
+export function withRedundancyMass(
+  vehicle: VehicleConfig,
+  seed: number,
+  effects: Required<TechEffects> = techEffects(),
+): RocketDef {
   const extra = buildVehicle(vehicle, qaLevels, seed).redundancyMass_kg;
-  if (extra === 0) return rocket;
+  const isp = effects.ispMultiplier;
+  if (extra === 0 && isp === 1) return rocket;
   return {
     ...rocket,
-    stages: rocket.stages.map((stage, index) =>
-      index === 0 ? { ...stage, dryMass_kg: stage.dryMass_kg + extra } : stage,
-    ),
+    stages: rocket.stages.map((stage, index) => ({
+      ...stage,
+      dryMass_kg: index === 0 ? stage.dryMass_kg + extra : stage.dryMass_kg,
+      ispSeaLevel_s: stage.ispSeaLevel_s * isp,
+      ispVacuum_s: stage.ispVacuum_s * isp,
+    })),
   };
 }
 
@@ -106,11 +158,15 @@ export function partLethality(partId: string): number {
  * How likely each cause is on a given vehicle. Composition, not simulation:
  * `src/sim` takes the table and never learns what hardware produced it.
  */
-export function occurrenceFor(vehicle: VehicleConfig, seed: number): Record<string, number> {
+export function occurrenceFor(
+  vehicle: VehicleConfig,
+  seed: number,
+  effects: Required<TechEffects> = techEffects(),
+): Record<string, number> {
   return causeProbabilities(
-    buildVehicle(vehicle, qaLevels, seed),
+    buildVehicle(vehicle, qaLevels, seed, undefined, (id) => effectivePartDef(id, effects)),
     partDef,
-    phaseExposure,
+    effectiveExposure(effects),
     rocket.nominalMissionDuration_s,
   );
 }
@@ -123,12 +179,16 @@ export function occurrenceFor(vehicle: VehicleConfig, seed: number): Record<stri
  * the vehicle produces and never learns what hardware produced it.
  */
 export function createMissionConfig(
-  overrides: Partial<MissionConfigInput> & { readonly vehicle?: VehicleConfig } = {},
+  overrides: Partial<MissionConfigInput> & {
+    readonly vehicle?: VehicleConfig;
+    readonly tech?: TechState;
+  } = {},
 ): MissionConfigInput {
-  const { vehicle = defaultVehicle, ...rest } = overrides;
+  const { vehicle = defaultVehicle, tech, ...rest } = overrides;
   const seed = rest.seed ?? 42;
+  const effects = techEffects(tech);
   return {
-    rocket: withRedundancyMass(vehicle, seed),
+    rocket: withRedundancyMass(vehicle, seed, effects),
     pitchProgram,
     checklist,
     causeGraph: loadCauseGraph(causeGraphData),
@@ -136,7 +196,7 @@ export function createMissionConfig(
     priorSettings,
     seed,
     missionKey: 'mission-1',
-    occurrenceByCause: occurrenceFor(vehicle, seed),
+    occurrenceByCause: occurrenceFor(vehicle, seed, effects),
     ...rest,
   };
 }

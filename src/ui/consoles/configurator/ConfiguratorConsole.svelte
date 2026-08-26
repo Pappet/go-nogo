@@ -15,7 +15,8 @@
   import { QA_LEVELS, type QaLevel } from '../../../sim/parts/partInstance.js';
   import { uncertainty } from '../../../economy/riskBudget.js';
   import { qaLocked } from '../../../economy/doctrine.js';
-  import { doctrines, qaLevels } from '../../../missionConfig.js';
+  import { doctrines, qaLevels, techTree } from '../../../missionConfig.js';
+  import { nextStep } from '../../../economy/techTree.js';
 
   interface Props {
     mission: Mission;
@@ -88,6 +89,59 @@
         {/each}
       </ul>
     {/if}
+  </section>
+
+  <section class="research">
+    <header>
+      <h2>RESEARCH</h2>
+      <span class="data">{telemetry.tech.data} data</span>
+    </header>
+    <div class="branches">
+      {#each techTree.branches as branch (branch.id)}
+        {@const step = nextStep(branch, telemetry.tech)}
+        <article class="branch">
+          <div class="head">
+            <span class="title">{branch.title}</span>
+            <span class="level">
+              {#if telemetry.tech.forks[branch.id]}
+                {branch.fork.options.find((o) => o.id === telemetry.tech.forks[branch.id])?.title}
+              {:else}
+                level {telemetry.tech.levels[branch.id] ?? 0}
+              {/if}
+            </span>
+          </div>
+
+          {#if step === null}
+            <p class="done">Branch complete.</p>
+          {:else if step.kind === 'level'}
+            <button
+              type="button"
+              disabled={telemetry.tech.data < step.level.cost}
+              onclick={() => mission.research(branch.id)}
+            >
+              {step.level.title} <small>{step.level.cost} data</small>
+            </button>
+            <p class="summary-line">{step.level.summary}</p>
+          {:else}
+            <p class="summary-line">
+              Level {branch.fork.level}: one choice, once. It cannot be taken back.
+            </p>
+            <div class="fork">
+              {#each branch.fork.options as option (option.id)}
+                <button
+                  type="button"
+                  disabled={telemetry.tech.data < branch.fork.cost}
+                  onclick={() => mission.research(branch.id, option.id)}
+                >
+                  {option.title} <small>{branch.fork.cost} data</small>
+                  <span class="risk">{option.risk}</span>
+                </button>
+              {/each}
+            </div>
+          {/if}
+        </article>
+      {/each}
+    </div>
   </section>
 
   <header class="summary">
@@ -327,6 +381,96 @@
     gap: 0.2rem;
     font-size: 0.62rem;
     color: #ffc25c;
+  }
+
+  .research {
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 3px;
+    padding: 0.7rem 0.85rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .research header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+  }
+
+  .research h2 {
+    margin: 0;
+    font-size: 0.6rem;
+    letter-spacing: 0.24em;
+    opacity: 0.5;
+  }
+
+  .research .data {
+    font-size: 0.66rem;
+    color: #6dfcae;
+  }
+
+  .branches {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.7rem;
+  }
+
+  .branch {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.35rem;
+  }
+
+  .branch > button {
+    text-align: left;
+  }
+
+  .branch .head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: 0.6rem;
+  }
+
+  .branch .title {
+    font-size: 0.68rem;
+    letter-spacing: 0.14em;
+    color: #e8fff2;
+  }
+
+  .branch .level {
+    font-size: 0.58rem;
+    opacity: 0.5;
+  }
+
+  .branch .summary-line,
+  .branch .done {
+    margin: 0;
+    font-size: 0.6rem;
+    opacity: 0.45;
+    line-height: 1.4;
+  }
+
+  .fork {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.35rem;
+  }
+
+  .fork button {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.2rem;
+    text-align: left;
+  }
+
+  .fork .risk {
+    font-size: 0.56rem;
+    opacity: 0.5;
+    line-height: 1.4;
   }
 
   .summary {
