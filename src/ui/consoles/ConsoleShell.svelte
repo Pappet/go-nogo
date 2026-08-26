@@ -10,9 +10,18 @@
 
   import { AVAILABLE_CONSOLES, Mission } from '../mission.svelte.js';
   import {
+    ACTION_LABELS,
+    BINDABLE_ACTIONS,
+    type BindableAction,
+    type Bindings,
     CONSOLE_SLOTS,
     type ConsoleSlot,
+    DEFAULT_BINDINGS,
     consoleHotkey,
+    isReserved,
+    keyLabel,
+    normaliseKey,
+    rebind,
     resolveHotkey,
   } from '../hotkeys.js';
   import { setMuted, unlockAudio } from '../audio/synth.js';
@@ -28,6 +37,40 @@
   const telemetry = $derived(mission.telemetry);
 
   let muted = $state(false);
+
+  /**
+   * The keyboard, as this player has arranged it (§7.7, rebinding from Phase 2).
+   *
+   * Kept in localStorage rather than in the campaign: a rebinding is about the
+   * person at the keyboard, not about the company they are running, and it
+   * should survive starting a new one.
+   */
+  const BINDINGS_KEY = 'go-nogo/bindings';
+  let bindings = $state<Bindings>(loadBindings());
+  let keysOpen = $state(false);
+  /** The action waiting for a key press, while the player is rebinding one. */
+  let capturing = $state<BindableAction | null>(null);
+
+  function loadBindings(): Bindings {
+    try {
+      const raw = localStorage.getItem(BINDINGS_KEY);
+      if (raw === null) return DEFAULT_BINDINGS;
+      // Merged onto the defaults, so a scheme saved before an action existed
+      // still leaves that action bound rather than dead.
+      return { ...DEFAULT_BINDINGS, ...(JSON.parse(raw) as Partial<Bindings>) };
+    } catch {
+      return DEFAULT_BINDINGS;
+    }
+  }
+
+  function saveBindings(next: Bindings): void {
+    bindings = next;
+    try {
+      localStorage.setItem(BINDINGS_KEY, JSON.stringify(next));
+    } catch {
+      // A browser refusing storage is not a reason to refuse the rebinding.
+    }
+  }
 
   /**
    * The POST-MORTEM is console ⑥ in §7, and §7.7 only hands out keys 1–5 — so
@@ -74,7 +117,20 @@
 
   function onKeydown(event: KeyboardEvent): void {
     if (event.metaKey || event.ctrlKey || event.altKey) return;
-    const action = resolveHotkey(event.key);
+
+    // While the rebinding panel is waiting, every key is the answer to it.
+    if (capturing !== null) {
+      event.preventDefault();
+      const key = normaliseKey(event.key);
+      if (key === 'escape') capturing = null;
+      else if (!isReserved(key)) {
+        saveBindings(rebind(bindings, capturing, key));
+        capturing = null;
+      }
+      return;
+    }
+
+    const action = resolveHotkey(event.key, bindings);
     if (action === null) return;
     event.preventDefault();
     unlockAudio();
@@ -184,11 +240,50 @@
         <button type="button" onclick={() => mission.save()} title="Save the flight where it is">
           SAVE{#if telemetry.savedAt !== null}<span class="saved">{telemetry.savedAt}</span>{/if}
         </button>
+        <button type="button" onclick={() => (keysOpen = !keysOpen)}>KEYS</button>
         <button type="button" onclick={toggleMute}>{muted ? 'SOUND OFF' : 'SOUND ON'}</button>
         <button type="button" onclick={restart}>RESTART</button>
       </div>
     </div>
   </header>
+
+  {#if keysOpen}
+    <section class="keys" aria-label="Key bindings">
+      <header>
+        <h2>KEY BINDINGS</h2>
+        <div>
+          <button type="button" onclick={() => saveBindings(DEFAULT_BINDINGS)}>RESET</button>
+          <button type="button" onclick={() => (keysOpen = false)}>CLOSE</button>
+        </div>
+      </header>
+      <ul>
+        {#each BINDABLE_ACTIONS as action (action)}
+          <li>
+            <span class="what">{ACTION_LABELS[action]}</span>
+            <button
+              type="button"
+              class="binding"
+              class:capturing={capturing === action}
+              class:unbound={bindings[action] === ''}
+              onclick={() => (capturing = capturing === action ? null : action)}
+            >
+              {#if capturing === action}
+                press a key…
+              {:else if bindings[action] === ''}
+                unbound
+              {:else}
+                {keyLabel(bindings[action])}
+              {/if}
+            </button>
+          </li>
+        {/each}
+      </ul>
+      <p class="note">
+        1–5 stay on the consoles: the tab bar prints those numbers, and a player who rebound one
+        would have no way back to it. Q W E R T belong to the focused panel unless you take them.
+      </p>
+    </section>
+  {/if}
 
   {#if telemetry.resumedFromSave}
     <p class="notice">Resumed from the last auto-save.</p>
@@ -373,6 +468,76 @@
     font: inherit;
     font-size: 0.85em;
     opacity: 0.45;
+  }
+
+  .keys {
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 3px;
+    padding: 0.7rem 0.9rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .keys header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .keys h2 {
+    margin: 0;
+    font-size: 0.6rem;
+    letter-spacing: 0.24em;
+    opacity: 0.5;
+  }
+
+  .keys header div {
+    display: flex;
+    gap: 0.35rem;
+  }
+
+  .keys ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 0.35rem;
+  }
+
+  .keys li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.8rem;
+    font-size: 0.66rem;
+  }
+
+  .keys .what {
+    opacity: 0.7;
+  }
+
+  .binding {
+    min-width: 6rem;
+    text-align: center;
+  }
+
+  .binding.capturing {
+    border-color: rgba(255, 194, 92, 0.7);
+    color: #ffc25c;
+  }
+
+  .binding.unbound {
+    border-color: rgba(255, 122, 107, 0.6);
+    color: #ff7a6b;
+  }
+
+  .keys .note {
+    margin: 0;
+    font-size: 0.58rem;
+    line-height: 1.5;
+    opacity: 0.4;
   }
 
   .notice {

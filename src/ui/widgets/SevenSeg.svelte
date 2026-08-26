@@ -76,16 +76,31 @@
   function isPunctuation(char: string): boolean {
     return char === ':' || char === '.';
   }
+
+  /**
+   * Whether the whole readout has to be drawn as text instead (§9).
+   *
+   * Per-character fallback is fine for a stray symbol, but it draws every
+   * glyph in one digit's width — which is right for `-` and wrong for anything
+   * wider. Once a string carries non-ASCII, the segments are the wrong display
+   * for it entirely, so the widget stops pretending and renders the text. This
+   * costs nothing now and is the expensive thing to retrofit later.
+   */
+  const textFallback = $derived([...value].some((char) => char.charCodeAt(0) > 127));
+  const textWidth = $derived(Math.max(1, value.length) * (DIGIT_WIDTH * 0.62));
 </script>
 
 <svg
   class="seven-seg {tone}"
-  viewBox="0 0 {totalWidth} {DIGIT_HEIGHT + 2}"
+  viewBox="0 0 {textFallback ? textWidth : totalWidth} {DIGIT_HEIGHT + 2}"
   height={size}
   role="img"
   aria-label={value}
 >
-  {#each glyphs as glyph (glyph.x)}
+  {#if textFallback}
+    <text class="lit-text wide" x={textWidth / 2} y="17" text-anchor="middle">{value}</text>
+  {/if}
+  {#each textFallback ? [] : glyphs as glyph (glyph.x)}
     <g transform="translate({glyph.x}, 1)">
       {#if glyph.char === ':'}
         <circle class="lit" cx="2" cy="7.5" r="1.3" />
@@ -125,6 +140,11 @@
 
   .dim {
     fill: rgba(255, 255, 255, 0.055);
+  }
+
+  .lit-text.wide {
+    font-size: 13px;
+    letter-spacing: 0.08em;
   }
 
   .lit-text {
