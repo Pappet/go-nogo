@@ -17,6 +17,7 @@ import {
   pitchProgram,
   contracts,
   doctrineById,
+  groundStations,
   baseMeasureDuration,
   staffTable,
   techEffects,
@@ -87,6 +88,7 @@ import {
   projectSchedule,
 } from '../sim/diagnosis/measures.js';
 import { ticksToEscalation } from '../sim/systems/anomaly.js';
+import { type StationView, downlinkFraction, viewAll } from '../sim/systems/comms.js';
 import type { ConsoleSlot } from './hotkeys.js';
 import {
   type CountdownPhase,
@@ -102,6 +104,7 @@ import { type Command, Engine, MAX_NUMERIC_WARP, TICKS_PER_SECOND } from '../sim
 import {
   currentSensedG,
   isThrusting,
+  missionTime_s,
   positionOf,
   propellantFraction,
   velocityOf,
@@ -185,6 +188,10 @@ export interface Telemetry {
   measures: MeasureView[];
   timeline: ProjectedMeasure[];
   channels: ChannelView;
+  /** What each ground station can see right now (§7 ③). */
+  stations: readonly StationView[];
+  /** Science queued aboard, and what has reached the ground (§6.3). */
+  downlink: { queued: number; delivered: number; fraction: number };
   resultOffer: { anomalyId: string; measureTitle: string } | null;
 
   /** The live risk budget for the vehicle as configured (§5.4). */
@@ -225,6 +232,16 @@ export const checklistItems = checklist.items;
 export const maxDynamicPressureLimit_Pa = rocket.maxDynamicPressure_Pa;
 export const targetOrbit = rocket.targetOrbit;
 
+/**
+ * Consoles that exist. The rest of §7's six are drawn in the tab bar and
+ * inert.
+ *
+ * One list, read by both the shell and `switchConsole` — it was two, they
+ * drifted the moment COMMS was added, and the console silently refused to
+ * open while its tab looked enabled.
+ */
+export const AVAILABLE_CONSOLES: readonly ConsoleSlot[] = ['launch', 'comms', 'engineering'];
+
 
 export class Mission {
   telemetry = $state<Telemetry>(emptyTelemetry());
@@ -252,6 +269,7 @@ export class Mission {
       measureDurations: measureDurationOverrides(staffTable, this.staff, (measureId) =>
         baseMeasureDuration(measureId),
       ),
+      researchData: this.contract?.researchData ?? 0,
     });
   }
   /** Counts the missions this session has rolled, for the mission key. */
@@ -343,7 +361,7 @@ export class Mission {
 
   /** Only consoles that exist in this phase can be switched to. */
   switchConsole(slot: ConsoleSlot): boolean {
-    if (slot !== 'launch' && slot !== 'engineering') return false;
+    if (!AVAILABLE_CONSOLES.includes(slot)) return false;
     this.console = slot;
     this.telemetry = this.snapshot();
     return true;
@@ -666,6 +684,12 @@ export class Mission {
       measures: this.measureViews(state, tick),
       timeline: this.projectQueued(state, tick),
       channels: this.channelView(state),
+      stations: viewAll(groundStations, position, missionTime_s(state.flight)),
+      downlink: {
+        queued: state.comms.queued,
+        delivered: state.comms.downlinked,
+        fraction: downlinkFraction(state.comms),
+      },
       resultOffer:
         state.diagnosis.pause.offer === null
           ? null
@@ -747,6 +771,9 @@ export class Mission {
   acceptContract(templateId: string): void {
     const board = generateBoard(contracts, this.campaign, this.campaign.week);
     this.contract = board.find((entry) => entry.templateId === templateId) ?? null;
+    // The mission has to know how much science it is carrying, so the link
+    // has something to fail to deliver.
+    this.reconfigure();
     this.telemetry = this.snapshot();
   }
 
@@ -762,7 +789,9 @@ export class Mission {
     if (this.settled || this.contract === null || !this.isOver(state)) return;
     this.settled = true;
     const outcome = settleContract(contracts, this.campaign, this.contract, !state.missionLost);
-    this.tech.data += outcome.researchData;
+    // §6.3: downlink limited by comms. Science that never reached a station
+    // never happened, whatever the instrument recorded.
+    this.tech.data += outcome.researchData * downlinkFraction(state.comms);
     this.campaign.vehicle = this.vehicleConfig;
 
     // The week turned inside settleContract, so the payroll is due and the
@@ -959,6 +988,8 @@ function emptyTelemetry(): Telemetry {
     measures: [],
     timeline: [],
     channels: { capacity: 0, inUse: 0 },
+    stations: [],
+    downlink: { queued: 0, delivered: 0, fraction: 1 },
     resultOffer: null,
     risk: { lossOfMission: [0, 0], lines: [], mass_kg: 0, redundancyMass_kg: 0, cost: 0 },
     doctrine: doctrines[0],

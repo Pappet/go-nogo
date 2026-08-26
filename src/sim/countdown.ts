@@ -25,6 +25,13 @@ import {
   stepAnomalies,
 } from './systems/anomaly.js';
 import {
+  type CommsData,
+  type CommsState,
+  createCommsState,
+  stepDownlink,
+  viewAll,
+} from './systems/comms.js';
+import {
   type FlightConfig,
   type FlightState,
   canCoastNow,
@@ -84,6 +91,8 @@ export interface MissionState {
   missionLost: boolean;
   /** Everything the anomaly and diagnosis systems own (Phase 1). */
   diagnosis: DiagnosisState;
+  /** The link budget and what has reached the ground (§7 ③, §6.3). */
+  comms: CommsState;
   /**
    * Set on the tick a new anomaly appeared and cleared once the engine has
    * stopped for it. Auto-pause is a state the world reaches, not something the
@@ -117,6 +126,14 @@ export interface MissionConfigInput extends FlightConfig {
    * and `src/sim` reads a plain table so it can be flown without one.
    */
   readonly occurrenceByCause?: Readonly<Record<string, number>>;
+  /** Ground stations this mission can talk to (§7 ③). */
+  readonly comms: CommsData;
+  /**
+   * Science this flight will produce, which only counts once it is downlinked
+   * (§6.3). Queued at liftoff rather than trickled: the instrument runs, the
+   * question is whether anyone was listening.
+   */
+  readonly researchData?: number;
 }
 
 export function createMissionState(config: MissionConfigInput): MissionState {
@@ -128,6 +145,7 @@ export function createMissionState(config: MissionConfigInput): MissionState {
     events: [],
     previousDynamicPressure_Pa: 0,
     missionLost: false,
+    comms: createCommsState(),
     diagnosis: createDiagnosisState(
       createPauseState(config.pauseModel ?? 'standard'),
       rollMissionContext(config.priorSettings, config.seed, config.missionKey),
@@ -281,6 +299,7 @@ export function createMissionSimulation(config: MissionConfigInput): Simulation<
     if (state.flight.liftoffTick < 0) return;
 
     if (tick === state.flight.liftoffTick) {
+      state.comms.queued = config.researchData ?? 0;
       state.diagnosis.anomalies.anomalies = planAnomalies(
         config.causeGraph,
         config.anomalySettings,
@@ -324,6 +343,35 @@ export function createMissionSimulation(config: MissionConfigInput): Simulation<
     }
 
     if (outcome.autoPause) state.pauseRequested = true;
+
+    stepCommsFor(state);
+  }
+
+  /**
+   * Moves science to the ground, on whatever channels the crisis left free.
+   *
+   * The free-channel count is read from the schedule rather than tracked
+   * separately: a cross-check running right now is a channel not carrying
+   * data, and that has to be true of the same number the ENGINEERING console
+   * shows or the trade is a story rather than a mechanic.
+   */
+  function stepCommsFor(state: MissionState): void {
+    const capacity = config.causeGraph.capacities['channel:any'] ?? 0;
+    let inUse = 0;
+    for (const running of state.diagnosis.schedule.running) {
+      const spec = config.causeGraph.specs.get(running.measureId);
+      for (const resource of spec?.occupies ?? []) {
+        if (resource === 'channel:any') inUse += 1;
+      }
+    }
+
+    stepDownlink(
+      state.comms,
+      config.comms,
+      viewAll(config.comms, positionOf(state.flight), missionTime_s(state.flight)),
+      Math.max(0, capacity - inUse),
+      DT_S,
+    );
   }
 
   function apply(state: MissionState, command: Command, tick: number): void {

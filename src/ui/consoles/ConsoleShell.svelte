@@ -8,7 +8,7 @@
    */
   import { onMount } from 'svelte';
 
-  import { Mission } from '../mission.svelte.js';
+  import { AVAILABLE_CONSOLES, Mission } from '../mission.svelte.js';
   import {
     CONSOLE_SLOTS,
     type ConsoleSlot,
@@ -20,6 +20,7 @@
   import SevenSeg from '../widgets/SevenSeg.svelte';
   import EngineeringConsole from './engineering/EngineeringConsole.svelte';
   import LaunchConsole from './launch/LaunchConsole.svelte';
+  import CommsConsole from './comms/CommsConsole.svelte';
   import ConfiguratorConsole from './configurator/ConfiguratorConsole.svelte';
   import PostMortemConsole from './postmortem/PostMortemConsole.svelte';
 
@@ -46,8 +47,7 @@
     }
   });
 
-  /** Consoles that exist in this phase. The rest are drawn, but inert. */
-  const AVAILABLE: readonly ConsoleSlot[] = ['launch', 'engineering'];
+  const AVAILABLE = AVAILABLE_CONSOLES;
   const LABELS: Record<ConsoleSlot, string> = {
     launch: 'LAUNCH',
     flight: 'FLIGHT',
@@ -242,6 +242,8 @@
     <ConfiguratorConsole {mission} />
   {:else if showReport}
     <PostMortemConsole {mission} />
+  {:else if telemetry.console === 'comms'}
+    <CommsConsole {mission} />
   {:else if telemetry.console === 'engineering'}
     <EngineeringConsole {mission} />
   {:else}

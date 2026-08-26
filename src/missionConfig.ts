@@ -9,6 +9,7 @@ import anomalyData from './data/anomalies.json' with { type: 'json' };
 import causesData from './data/causes.json' with { type: 'json' };
 import contractData from './data/contracts.json' with { type: 'json' };
 import doctrineData from './data/doctrines.json' with { type: 'json' };
+import groundStationData from './data/groundStations.json' with { type: 'json' };
 import checklistData from './data/checklist.json' with { type: 'json' };
 import partsData from './data/parts.json' with { type: 'json' };
 import pitchData from './data/pitchProgram.json' with { type: 'json' };
@@ -39,6 +40,7 @@ import {
 import { type VehicleConfig, buildVehicle } from './economy/vehicle.js';
 import type { PartDef, QaLevelTable } from './sim/parts/partInstance.js';
 import type { AnomalySettings } from './sim/systems/anomaly.js';
+import type { CommsData } from './sim/systems/comms.js';
 
 export const rocket = rocketData as RocketDef;
 export const pitchProgram = pitchData as PitchProgram;
@@ -60,6 +62,9 @@ const sharedGraph = loadCauseGraph(causeGraphData);
 export function baseMeasureDuration(measureId: string): number {
   return sharedGraph.measure(measureId).duration_s;
 }
+
+/** Ground stations and the link budget (§7 ③). */
+export const groundStations = groundStationData as unknown as CommsData;
 
 /** Engineers (§6.5). */
 export const staffTable = staffData as unknown as StaffData;
@@ -204,6 +209,7 @@ export function createMissionConfig(
     pitchProgram,
     checklist,
     causeGraph: loadCauseGraph(causeGraphData, measureDurations),
+    comms: groundStations,
     anomalySettings,
     priorSettings,
     seed,

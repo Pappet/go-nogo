@@ -103,6 +103,10 @@ export function encodeMissionState(state: MissionState, writer: CanonicalWriter)
   writer.int32(state.events.length, 'events.length');
   writer.float64(state.previousDynamicPressure_Pa, 'previousDynamicPressure_Pa');
   writer.boolean(state.missionLost);
+  // Comms is simulation state: what reached the ground decides what the
+  // contract pays, so a desync in the link has to be caught like any other.
+  writer.float64(state.comms.queued, 'comms.queued');
+  writer.float64(state.comms.downlinked, 'comms.downlinked');
   writer.boolean(state.pauseRequested);
   encodeDiagnosisState(state.diagnosis, writer);
   encodeFlightState(state.flight, writer);
