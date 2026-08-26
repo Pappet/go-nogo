@@ -1,0 +1,44 @@
+{
+  "description": "The three doctrines (concept §6.1). Chosen once per campaign and never changed. Each is a different set of prices, not a better or worse start: a doctrine makes some vehicles cheap and forbids others outright, which is what makes two campaigns diverge rather than repaint.",
+  "doctrines": [
+    {
+      "id": "doctrine_mass_volume",
+      "title": "Mass & Volume",
+      "summary": "Build many, build cheap, accept that some of them misbehave.",
+      "naturalPath": "Constellations, commercial",
+      "startingCapital": 3200,
+      "costBySystem": { "prop": 0.75, "power": 0.75, "avionics": 1.0, "comms": 1.0 },
+      "qaCostMultiplier": 1.0,
+      "lockedQaLevels": ["qualification"],
+      "lockedQaReason": "Hot fire needs a test stand you have not built. Propulsion level 3 unlocks it.",
+      "startingReputation": { "government": 0, "commercial": 15, "science": 0 },
+      "precisionBonusFactor": 0.5
+    },
+    {
+      "id": "doctrine_precision",
+      "title": "Precision",
+      "summary": "Fewer vehicles, each one known down to the decimal.",
+      "naturalPath": "GEO, rendezvous, government",
+      "startingCapital": 2600,
+      "costBySystem": { "prop": 1.15, "power": 1.15, "avionics": 0.7, "comms": 1.0 },
+      "qaCostMultiplier": 0.85,
+      "lockedQaLevels": ["series"],
+      "lockedQaReason": "Series production is not certified under this doctrine. Every unit is tested.",
+      "startingReputation": { "government": 15, "commercial": 0, "science": 5 },
+      "precisionBonusFactor": 2.0
+    },
+    {
+      "id": "doctrine_science",
+      "title": "Science",
+      "summary": "Instruments first, money later, and an investor who can wait.",
+      "naturalPath": "Moon, probes",
+      "startingCapital": 1800,
+      "costBySystem": { "prop": 1.0, "power": 1.0, "avionics": 0.9, "comms": 0.6 },
+      "qaCostMultiplier": 1.0,
+      "lockedQaLevels": [],
+      "lockedQaReason": "",
+      "startingReputation": { "government": 0, "commercial": -20, "science": 25 },
+      "precisionBonusFactor": 1.0
+    }
+  ]
+}

@@ -14,10 +14,14 @@ import {
   defaultVehicle,
   phaseExposure,
   pitchProgram,
+  doctrineById,
+  doctrines,
   partLethality,
   qaLevels,
   rocket,
 } from '../missionConfig.js';
+import { type DoctrineDef, nearestAllowedQa, qaLocked } from '../economy/doctrine.js';
+import { QA_LEVELS } from '../sim/parts/partInstance.js';
 import {
   type RiskBudget,
   computeRiskBudget,
@@ -144,6 +148,8 @@ export interface Telemetry {
 
   /** The live risk budget for the vehicle as configured (§5.4). */
   risk: RiskBudget;
+  /** The doctrine this campaign is flying under (§6.1). */
+  doctrine: DoctrineDef;
   /** The vehicle the planner is editing, and whether it is open. */
   plannerOpen: boolean;
   vehicle: VehicleConfig;
@@ -180,6 +186,8 @@ export class Mission {
   /** The planner's working copy. Applied, or thrown away, as one decision. */
   private draft: VehicleConfig = defaultVehicle;
   private plannerOpen = false;
+  /** Chosen once per campaign (§6.1). Defaults until a campaign picks one. */
+  private doctrine: DoctrineDef = doctrines[0];
 
   private engine = new Engine(createMissionSimulation(this.config), createMissionState(this.config));
   private commands: Command[] = [];
@@ -336,7 +344,43 @@ export class Mission {
   }
 
   setSlotQa(slotId: string, qaLevel: QaLevel): void {
-    this.editSlot(slotId, { qaLevel });
+    // A locked level is not offered, so reaching one means the doctrine
+    // changed under a saved vehicle. Take the nearest it does allow rather
+    // than refusing the click with no explanation.
+    this.editSlot(slotId, {
+      qaLevel: qaLocked(this.doctrine, qaLevel)
+        ? nearestAllowedQa(this.doctrine, qaLevel, QA_LEVELS)
+        : qaLevel,
+    });
+  }
+
+  /**
+   * Switches doctrine and restarts (§6.1).
+   *
+   * Once per campaign in the finished game; here it is how the player picks
+   * one at all. Any slot on a level the new doctrine forbids moves to the
+   * nearest allowed one — refusing to load would be the wrong answer to a
+   * choice the player is allowed to make.
+   */
+  chooseDoctrine(doctrineId: string): void {
+    this.doctrine = doctrineById(doctrineId);
+    const legal = (vehicle: VehicleConfig): VehicleConfig => ({
+      slots: vehicle.slots.map((slot) => ({
+        ...slot,
+        qaLevel: nearestAllowedQa(this.doctrine, slot.qaLevel, QA_LEVELS),
+      })),
+    });
+    this.vehicleConfig = legal(this.vehicleConfig);
+    this.draft = legal(this.draft);
+    this.config = createMissionConfig({
+      seed: this.config.seed,
+      missionKey: this.config.missionKey,
+      vehicle: this.vehicleConfig,
+    });
+    this.clearSave();
+    this.reset();
+    this.plannerOpen = true;
+    this.telemetry = this.snapshot();
   }
 
   setSlotUnits(slotId: string, units: number): void {
@@ -541,6 +585,7 @@ export class Mission {
             },
 
       risk: this.riskBudget(this.plannerOpen ? this.draft : this.vehicleConfig),
+      doctrine: this.doctrine,
       plannerOpen: this.plannerOpen,
       vehicle: this.plannerOpen ? this.draft : this.vehicleConfig,
       pendingChanges: changedSlots(this.vehicleConfig, this.draft),
@@ -554,7 +599,7 @@ export class Mission {
   /** The risk budget for a configuration, priced for this mission. */
   private riskBudget(vehicle: VehicleConfig): RiskBudget {
     return computeRiskBudget(
-      buildVehicle(vehicle, qaLevels, this.config.seed),
+      buildVehicle(vehicle, qaLevels, this.config.seed, this.doctrine),
       phaseExposure,
       rocket.nominalMissionDuration_s,
       partLethality,
@@ -738,6 +783,7 @@ function emptyTelemetry(): Telemetry {
     channels: { capacity: 0, inUse: 0 },
     resultOffer: null,
     risk: { lossOfMission: [0, 0], lines: [], mass_kg: 0, redundancyMass_kg: 0, cost: 0 },
+    doctrine: doctrines[0],
     plannerOpen: false,
     vehicle: { slots: [] },
     pendingChanges: [],

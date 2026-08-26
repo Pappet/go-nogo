@@ -7,6 +7,7 @@
  */
 import anomalyData from './data/anomalies.json' with { type: 'json' };
 import causesData from './data/causes.json' with { type: 'json' };
+import doctrineData from './data/doctrines.json' with { type: 'json' };
 import checklistData from './data/checklist.json' with { type: 'json' };
 import partsData from './data/parts.json' with { type: 'json' };
 import pitchData from './data/pitchProgram.json' with { type: 'json' };
@@ -20,6 +21,7 @@ import type { PriorSettings } from './sim/diagnosis/priors.js';
 import type { PitchProgram } from './sim/physics/ascentProgram.js';
 import type { RocketDef } from './sim/physics/thrust.js';
 import { type PhaseExposure, causeProbabilities } from './economy/riskBudget.js';
+import type { DoctrineDef } from './economy/doctrine.js';
 import { type VehicleConfig, buildVehicle } from './economy/vehicle.js';
 import type { PartDef, QaLevelTable } from './sim/parts/partInstance.js';
 import type { AnomalySettings } from './sim/systems/anomaly.js';
@@ -39,6 +41,15 @@ export const causeGraphData = causesData as unknown as CauseGraphData;
 
 /** One loaded graph for the lookups that do not want to rebuild it each call. */
 const sharedGraph = loadCauseGraph(causeGraphData);
+
+/** The three doctrines (§6.1). */
+export const doctrines = doctrineData.doctrines as unknown as readonly DoctrineDef[];
+
+export function doctrineById(doctrineId: string): DoctrineDef {
+  const found = doctrines.find((entry) => entry.id === doctrineId);
+  if (found === undefined) throw new Error(`Unknown doctrine '${doctrineId}'.`);
+  return found;
+}
 
 /** The component catalogue and the QA table (§4, §4.1). */
 export const qaLevels = partsData.qaLevels as QaLevelTable;

@@ -17,6 +17,7 @@ import {
   buildPart,
 } from '../sim/parts/partInstance.js';
 import { partDef } from '../missionConfig.js';
+import { type DoctrineDef, unitCost } from './doctrine.js';
 
 /** What the player chose for one slot. The configurator's unit of editing. */
 export interface SlotChoice {
@@ -59,6 +60,9 @@ export interface BuiltVehicle {
 /**
  * Instantiates a configuration.
  *
+ * `doctrine` prices it (§6.1). Left out, the catalogue price applies — which is
+ * what a test wants when it is asking about hardware rather than about money.
+ *
  * Each unit in a slot gets its own serial line, so a redundant pair is two
  * genuinely different parts rather than the same draw twice — which is the
  * entire point of redundancy and would be silently broken by keying both on
@@ -68,6 +72,7 @@ export function buildVehicle(
   config: VehicleConfig,
   qaTable: QaLevelTable,
   seed: number,
+  doctrine?: DoctrineDef,
 ): BuiltVehicle {
   const slots = config.slots.map((choice) => {
     const def = partDef(choice.partId);
@@ -82,7 +87,11 @@ export function buildVehicle(
       system: def.system,
       units,
       mass_kg: def.mass_kg * units.length,
-      cost: Math.round(def.cost * qaTable[choice.qaLevel].costMultiplier * units.length),
+      cost:
+        (doctrine === undefined
+          ? Math.round(def.cost * qaTable[choice.qaLevel].costMultiplier)
+          : unitCost(doctrine, def.cost, def.system, qaTable[choice.qaLevel].costMultiplier)) *
+        units.length,
     };
   });
 

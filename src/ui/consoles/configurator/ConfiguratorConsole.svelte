@@ -14,7 +14,8 @@
   import type { Mission } from '../../mission.svelte.js';
   import { QA_LEVELS, type QaLevel } from '../../../sim/parts/partInstance.js';
   import { uncertainty } from '../../../economy/riskBudget.js';
-  import { qaLevels } from '../../../missionConfig.js';
+  import { qaLocked } from '../../../economy/doctrine.js';
+  import { doctrines, qaLevels } from '../../../missionConfig.js';
 
   interface Props {
     mission: Mission;
@@ -32,6 +33,21 @@
 </script>
 
 <section class="planner">
+  <nav class="doctrines" aria-label="Doctrine">
+    {#each doctrines as doctrine (doctrine.id)}
+      <button
+        type="button"
+        class="doctrine"
+        class:active={telemetry.doctrine.id === doctrine.id}
+        onclick={() => mission.chooseDoctrine(doctrine.id)}
+      >
+        <span class="name">{doctrine.title}</span>
+        <span class="summary-line">{doctrine.summary}</span>
+        <span class="path">{doctrine.naturalPath}</span>
+      </button>
+    {/each}
+  </nav>
+
   <header class="summary">
     <div class="headline">
       <span class="label">LOSS OF MISSION</span>
@@ -65,13 +81,16 @@
           <span class="label">QUALITY ASSURANCE</span>
           <div class="options">
             {#each QA_LEVELS as level (level)}
+              {@const locked = qaLocked(telemetry.doctrine, level)}
               <button
                 type="button"
                 class:active={slot.qaLevel === level}
+                disabled={locked}
+                title={locked ? telemetry.doctrine.lockedQaReason : ''}
                 onclick={() => mission.setSlotQa(slot.slotId, level as QaLevel)}
               >
                 {qaLevels[level].title}
-                <small>×{qaLevels[level].costMultiplier}</small>
+                <small>{locked ? 'locked' : `×${qaLevels[level].costMultiplier}`}</small>
               </button>
             {/each}
           </div>
@@ -130,6 +149,48 @@
     display: flex;
     flex-direction: column;
     gap: 0.8rem;
+  }
+
+  .doctrines {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0.5rem;
+  }
+
+  .doctrine {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.2rem;
+    text-align: left;
+    padding: 0.55rem 0.75rem;
+  }
+
+  .doctrine .name {
+    font-size: 0.72rem;
+    letter-spacing: 0.14em;
+    color: #e8fff2;
+  }
+
+  .doctrine .summary-line {
+    font-size: 0.62rem;
+    opacity: 0.55;
+    letter-spacing: 0.02em;
+  }
+
+  .doctrine .path {
+    font-size: 0.55rem;
+    letter-spacing: 0.16em;
+    opacity: 0.35;
+  }
+
+  .doctrine.active {
+    border-color: rgba(109, 252, 174, 0.6);
+    background: rgba(109, 252, 174, 0.06);
+  }
+
+  .doctrine.active .name {
+    color: #6dfcae;
   }
 
   .summary {
