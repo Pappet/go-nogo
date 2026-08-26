@@ -17,6 +17,8 @@ import {
   pitchProgram,
   contracts,
   doctrineById,
+  baseMeasureDuration,
+  staffTable,
   techEffects,
   techTree,
   doctrines,
@@ -43,6 +45,23 @@ import {
   researchLevel,
   takeFork,
 } from '../economy/techTree.js';
+import {
+  type Engineer,
+  type StaffState,
+  createStaffState,
+  dismiss,
+  hire,
+  measureDurationOverrides,
+  offerPool,
+  weeklySalaries,
+} from '../economy/staff.js';
+import {
+  type BankruptcyState,
+  createBankruptcyState,
+  isFrozen,
+  recordContractFlown,
+  reviewFinances,
+} from '../economy/bankruptcy.js';
 import { QA_LEVELS } from '../sim/parts/partInstance.js';
 import {
   type RiskBudget,
@@ -181,6 +200,13 @@ export interface Telemetry {
   contractShortfall: readonly string[];
   /** What the campaign has researched, and what it could buy next (§6.4). */
   tech: TechState;
+  /** Who is on the payroll, and who could be (§6.5). */
+  staff: StaffState;
+  staffPool: readonly Engineer[];
+  weeklySalaries: number;
+  /** Where the campaign stands with its investor (§6.6). */
+  finances: BankruptcyState;
+  frozenBranchIds: readonly string[];
   /** The vehicle the planner is editing, and whether it is open. */
   plannerOpen: boolean;
   vehicle: VehicleConfig;
@@ -223,6 +249,9 @@ export class Mission {
       missionKey: nextMissionKey(this.campaign),
       vehicle: this.vehicleConfig,
       tech: this.tech,
+      measureDurations: measureDurationOverrides(staffTable, this.staff, (measureId) =>
+        baseMeasureDuration(measureId),
+      ),
     });
   }
   /** Counts the missions this session has rolled, for the mission key. */
@@ -238,6 +267,8 @@ export class Mission {
   private campaign: CampaignState = createCampaign(doctrines[0], 42, defaultVehicle);
   private contract: Contract | null = null;
   private tech: TechState = createTechState();
+  private staff: StaffState = createStaffState();
+  private finances: BankruptcyState = createBankruptcyState();
   /** Set once the flown contract has been booked, so it is booked once. */
   private settled = false;
 
@@ -421,8 +452,11 @@ export class Mission {
     this.campaign = createCampaign(this.doctrine, this.campaign.seed, this.vehicleConfig);
     this.contract = null;
     // A doctrine is chosen once per campaign, so switching starts a new one —
-    // including its research, which was bought under the old one's prices.
+    // including its research, which was bought under the old one's prices,
+    // its payroll and its standing with the investor.
     this.tech = createTechState();
+    this.staff = createStaffState();
+    this.finances = createBankruptcyState();
     const legal = (vehicle: VehicleConfig): VehicleConfig => ({
       slots: vehicle.slots.map((slot) => ({
         ...slot,
@@ -647,6 +681,13 @@ export class Mission {
       contract: this.contract,
       contractShortfall: this.shortfall(this.plannerOpen ? this.draft : this.vehicleConfig),
       tech: this.tech,
+      staff: this.staff,
+      staffPool: offerPool(staffTable, this.campaign, this.campaign.week),
+      weeklySalaries: weeklySalaries(this.staff),
+      finances: this.finances,
+      frozenBranchIds: techTree.branches
+        .filter((branch) => isFrozen(this.finances, branch.id))
+        .map((branch) => branch.id),
       plannerOpen: this.plannerOpen,
       vehicle: this.plannerOpen ? this.draft : this.vehicleConfig,
       pendingChanges: changedSlots(this.vehicleConfig, this.draft),
@@ -670,10 +711,29 @@ export class Mission {
     ];
   }
 
+  /** Puts an engineer on the payroll (§6.5). */
+  hireEngineer(engineerId: string): void {
+    const engineer = offerPool(staffTable, this.campaign, this.campaign.week).find(
+      (entry) => entry.id === engineerId,
+    );
+    if (engineer === undefined) return;
+    if (!hire(staffTable, this.staff, engineer)) return;
+    this.reconfigure();
+    this.telemetry = this.snapshot();
+  }
+
+  dismissEngineer(engineerId: string): void {
+    dismiss(this.staff, engineerId);
+    this.reconfigure();
+    this.telemetry = this.snapshot();
+  }
+
   /** Buys the next thing a branch offers, level or fork (§6.4). */
   research(branchId: string, optionId?: string): void {
     const branch = techTree.branches.find((entry) => entry.id === branchId);
     if (branch === undefined) return;
+    // A frozen branch is the investor's condition, not a suggestion (§6.6).
+    if (isFrozen(this.finances, branchId)) return;
     const step = nextStep(branch, this.tech);
     if (step === null) return;
     if (step.kind === 'level') researchLevel(branch, this.tech);
@@ -704,6 +764,12 @@ export class Mission {
     const outcome = settleContract(contracts, this.campaign, this.contract, !state.missionLost);
     this.tech.data += outcome.researchData;
     this.campaign.vehicle = this.vehicleConfig;
+
+    // The week turned inside settleContract, so the payroll is due and the
+    // investor gets to look at the books (§6.5, §6.6).
+    this.campaign.capital -= weeklySalaries(this.staff);
+    recordContractFlown(this.finances);
+    reviewFinances(this.finances, this.campaign, techTree.branches, this.tech);
   }
 
   /** The risk budget for a configuration, priced for this mission. */
@@ -901,6 +967,11 @@ function emptyTelemetry(): Telemetry {
     contract: null,
     contractShortfall: [],
     tech: createTechState(),
+    staff: createStaffState(),
+    staffPool: [],
+    weeklySalaries: 0,
+    finances: createBankruptcyState(),
+    frozenBranchIds: [],
     plannerOpen: false,
     vehicle: { slots: [] },
     pendingChanges: [],

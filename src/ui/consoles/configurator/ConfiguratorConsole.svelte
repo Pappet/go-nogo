@@ -15,7 +15,7 @@
   import { QA_LEVELS, type QaLevel } from '../../../sim/parts/partInstance.js';
   import { uncertainty } from '../../../economy/riskBudget.js';
   import { qaLocked } from '../../../economy/doctrine.js';
-  import { doctrines, qaLevels, techTree } from '../../../missionConfig.js';
+  import { doctrines, qaLevels, staffTable, techTree } from '../../../missionConfig.js';
   import { nextStep } from '../../../economy/techTree.js';
 
   interface Props {
@@ -34,6 +34,32 @@
 </script>
 
 <section class="planner">
+  {#if telemetry.finances.ended}
+    <p class="investor ended">
+      ■ CAMPAIGN OVER — the investor has written the company off. A second
+      bankruptcy ends it (§6.6).
+    </p>
+  {:else if telemetry.finances.takeovers > 0}
+    <p class="investor">
+      ▲ INVESTOR IN CONTROL — debt cleared, standing lost in every market.
+      {#if telemetry.finances.dictatedRemaining > 0}
+        {telemetry.finances.dictatedRemaining} contract{telemetry.finances.dictatedRemaining === 1
+          ? ''
+          : 's'} still dictated.
+      {/if}
+      {#if telemetry.frozenBranchIds.length > 0}
+        Research frozen on {telemetry.frozenBranchIds
+          .map((id) => techTree.branches.find((b) => b.id === id)?.title)
+          .join(', ')}.
+      {/if}
+    </p>
+  {:else if telemetry.campaign.capital < 0}
+    <p class="investor warning">
+      ▲ ACCOUNT IN THE RED — {telemetry.finances.weeksInDebt === 0 ? 'first week' : 'second week'}.
+      Two in a row and the investor steps in.
+    </p>
+  {/if}
+
   <nav class="doctrines" aria-label="Doctrine">
     {#each doctrines as doctrine (doctrine.id)}
       <button
@@ -116,7 +142,8 @@
           {:else if step.kind === 'level'}
             <button
               type="button"
-              disabled={telemetry.tech.data < step.level.cost}
+              disabled={telemetry.tech.data < step.level.cost ||
+                telemetry.frozenBranchIds.includes(branch.id)}
               onclick={() => mission.research(branch.id)}
             >
               {step.level.title} <small>{step.level.cost} data</small>
@@ -130,7 +157,8 @@
               {#each branch.fork.options as option (option.id)}
                 <button
                   type="button"
-                  disabled={telemetry.tech.data < branch.fork.cost}
+                  disabled={telemetry.tech.data < branch.fork.cost ||
+                    telemetry.frozenBranchIds.includes(branch.id)}
                   onclick={() => mission.research(branch.id, option.id)}
                 >
                   {option.title} <small>{branch.fork.cost} data</small>
@@ -142,6 +170,43 @@
         </article>
       {/each}
     </div>
+  </section>
+
+  <section class="staff">
+    <header>
+      <h2>ENGINEERS</h2>
+      <span class="wages">
+        {telemetry.staff.hired.length}/{staffTable.maxEngineers} · {telemetry.weeklySalaries}k per week
+      </span>
+    </header>
+
+    {#if telemetry.staff.hired.length > 0}
+      <div class="hired">
+        {#each telemetry.staff.hired as engineer (engineer.id)}
+          <button type="button" onclick={() => mission.dismissEngineer(engineer.id)}>
+            {engineer.name} <small>{engineer.specialty} · {engineer.salary}k</small>
+            <span class="dismiss">dismiss</span>
+          </button>
+        {/each}
+      </div>
+    {/if}
+
+    <div class="pool">
+      {#each telemetry.staffPool as engineer (engineer.id)}
+        {@const employed = telemetry.staff.hired.some((e) => e.id === engineer.id)}
+        <button
+          type="button"
+          disabled={employed || telemetry.staff.hired.length >= staffTable.maxEngineers}
+          onclick={() => mission.hireEngineer(engineer.id)}
+        >
+          {engineer.name} <small>{engineer.specialty} · {engineer.salary}k/wk</small>
+        </button>
+      {/each}
+    </div>
+    <p class="note">
+      An engineer makes their own team faster to ask, and their guesses sharper. A second one in
+      the same specialty costs the same and adds nothing.
+    </p>
   </section>
 
   <header class="summary">
@@ -381,6 +446,77 @@
     gap: 0.2rem;
     font-size: 0.62rem;
     color: #ffc25c;
+  }
+
+  .investor {
+    margin: 0;
+    border: 1px solid rgba(255, 194, 92, 0.5);
+    background: rgba(255, 194, 92, 0.06);
+    border-radius: 3px;
+    padding: 0.55rem 0.8rem;
+    font-size: 0.68rem;
+    letter-spacing: 0.04em;
+    color: #ffc25c;
+    line-height: 1.5;
+  }
+
+  .investor.ended {
+    border-color: rgba(255, 122, 107, 0.6);
+    background: rgba(255, 122, 107, 0.07);
+    color: #ff7a6b;
+  }
+
+  .staff {
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 3px;
+    padding: 0.7rem 0.85rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+  }
+
+  .staff header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+  }
+
+  .staff h2 {
+    margin: 0;
+    font-size: 0.6rem;
+    letter-spacing: 0.24em;
+    opacity: 0.5;
+  }
+
+  .wages {
+    font-size: 0.62rem;
+    opacity: 0.55;
+  }
+
+  .hired,
+  .pool {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+  }
+
+  .hired button {
+    border-color: rgba(109, 252, 174, 0.45);
+    color: #6dfcae;
+  }
+
+  .hired .dismiss {
+    font-size: 0.52rem;
+    letter-spacing: 0.16em;
+    opacity: 0.4;
+    margin-left: 0.4rem;
+  }
+
+  .staff .note {
+    margin: 0;
+    font-size: 0.58rem;
+    opacity: 0.4;
+    line-height: 1.5;
   }
 
   .research {

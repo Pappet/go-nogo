@@ -352,7 +352,30 @@ export function validateCauseGraph(data: CauseGraphData): void {
   }
 }
 
-export function loadCauseGraph(data: CauseGraphData): CauseGraph {
+/**
+ * Loads the graph, optionally with measure durations replaced.
+ *
+ * The overrides are how an engineer on the payroll makes their own team faster
+ * to ask (§6.5). They are applied to the data rather than layered on top of
+ * the graph, so everything downstream — the scheduler, the makespan, the cost
+ * printed on the button — sees one duration and cannot disagree about it.
+ */
+export function loadCauseGraph(
+  data: CauseGraphData,
+  durationOverrides: Readonly<Record<string, number>> = {},
+): CauseGraph {
   validateCauseGraph(data);
-  return new CauseGraph(data);
+  if (Object.keys(durationOverrides).length === 0) return new CauseGraph(data);
+
+  return new CauseGraph({
+    ...data,
+    measures: Object.fromEntries(
+      Object.entries(data.measures).map(([measureId, measure]) => [
+        measureId,
+        durationOverrides[measureId] === undefined
+          ? measure
+          : { ...measure, duration_s: durationOverrides[measureId] },
+      ]),
+    ),
+  });
 }

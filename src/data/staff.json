@@ -1,0 +1,21 @@
+{
+  "description": "Engineers (concept §6.5). Deliberately minimal: no skill trees, no morale, no names to get attached to. An engineer is a fixed weekly cost that makes their own specialty faster to ask and sharper to guess at. Anything more would be scope creep.",
+  "maxEngineers": 4,
+  "poolSize": 3,
+  "weeksPerPoolRefresh": 4,
+  "specialties": ["prop", "avionics", "comms", "power"],
+  "salaryBand": [40, 90],
+  "queryDurationFactor": 0.62,
+  "priorSharpening": 1.4,
+  "measuresBySpecialty": {
+    "prop": ["measure_diag_team_prop"],
+    "avionics": ["measure_diag_team_avionics"],
+    "comms": [],
+    "power": []
+  },
+  "names": [
+    "Alvarez", "Baptiste", "Chen", "Dubois", "Ekwueme", "Fontaine",
+    "Grimaldi", "Halvorsen", "Iqbal", "Jarvis", "Kowalski", "Lindqvist",
+    "Moreau", "Nakamura", "Okonkwo", "Petrov", "Quintero", "Rasmussen"
+  ]
+}

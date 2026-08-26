@@ -16,6 +16,7 @@ import priorData from './data/priors.json' with { type: 'json' };
 import riskData from './data/riskBudget.json' with { type: 'json' };
 import vehicleData from './data/vehicle.json' with { type: 'json' };
 import rocketData from './data/rocket.json' with { type: 'json' };
+import staffData from './data/staff.json' with { type: 'json' };
 import techTreeData from './data/techtree.json' with { type: 'json' };
 import { type ChecklistDef, type MissionConfigInput } from './sim/countdown.js';
 import { type CauseGraphData, loadCauseGraph } from './sim/diagnosis/causeGraph.js';
@@ -25,6 +26,7 @@ import type { RocketDef } from './sim/physics/thrust.js';
 import { type PhaseExposure, causeProbabilities } from './economy/riskBudget.js';
 import type { DoctrineDef } from './economy/doctrine.js';
 import type { ContractsData } from './economy/markets.js';
+import type { StaffData } from './economy/staff.js';
 import {
   type TechEffects,
   type TechState,
@@ -53,6 +55,14 @@ export const causeGraphData = causesData as unknown as CauseGraphData;
 
 /** One loaded graph for the lookups that do not want to rebuild it each call. */
 const sharedGraph = loadCauseGraph(causeGraphData);
+
+/** A measure's catalogue duration, before any payroll shortens it (§6.5). */
+export function baseMeasureDuration(measureId: string): number {
+  return sharedGraph.measure(measureId).duration_s;
+}
+
+/** Engineers (§6.5). */
+export const staffTable = staffData as unknown as StaffData;
 
 /** The tech tree, propulsion and avionics (§6.4). */
 export const techTree = techTreeData as unknown as TechTreeData;
@@ -182,16 +192,18 @@ export function createMissionConfig(
   overrides: Partial<MissionConfigInput> & {
     readonly vehicle?: VehicleConfig;
     readonly tech?: TechState;
+    /** Team-query durations as the payroll has left them (§6.5). */
+    readonly measureDurations?: Readonly<Record<string, number>>;
   } = {},
 ): MissionConfigInput {
-  const { vehicle = defaultVehicle, tech, ...rest } = overrides;
+  const { vehicle = defaultVehicle, tech, measureDurations, ...rest } = overrides;
   const seed = rest.seed ?? 42;
   const effects = techEffects(tech);
   return {
     rocket: withRedundancyMass(vehicle, seed, effects),
     pitchProgram,
     checklist,
-    causeGraph: loadCauseGraph(causeGraphData),
+    causeGraph: loadCauseGraph(causeGraphData, measureDurations),
     anomalySettings,
     priorSettings,
     seed,
