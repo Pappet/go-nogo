@@ -1,0 +1,339 @@
+<script lang="ts">
+  /**
+   * The planner (concept §5.4, §4.1, §4.2).
+   *
+   * One screen, one question: what are you willing to not know? Every row is a
+   * slot, every dial costs something, and the budget above updates as you
+   * turn them. The range matters more than the midpoint — QA mostly buys a
+   * smaller unknown rather than a better vehicle, and the panel is laid out to
+   * make that visible rather than to hide it behind a single number.
+   *
+   * Changing anything here re-plans the mission. Only the slots you touched
+   * get new hardware (§5.4): everything else keeps the exact parts it had.
+   */
+  import type { Mission } from '../../mission.svelte.js';
+  import { QA_LEVELS, type QaLevel } from '../../../sim/parts/partInstance.js';
+  import { uncertainty } from '../../../economy/riskBudget.js';
+  import { qaLevels } from '../../../missionConfig.js';
+
+  interface Props {
+    mission: Mission;
+  }
+
+  const { mission }: Props = $props();
+  const telemetry = $derived(mission.telemetry);
+
+  const percent = (fraction: number): string => `${(fraction * 100).toFixed(1)} %`;
+  const lineFor = (slotId: string) =>
+    telemetry.risk.lines.find((line) => line.slotId === slotId);
+
+  const changed = $derived(new Set(telemetry.pendingChanges));
+  const dirty = $derived(telemetry.pendingChanges.length > 0);
+</script>
+
+<section class="planner">
+  <header class="summary">
+    <div class="headline">
+      <span class="label">LOSS OF MISSION</span>
+      <span class="value">
+        {percent(telemetry.risk.lossOfMission[0])} – {percent(telemetry.risk.lossOfMission[1])}
+      </span>
+      <span class="spread">±{(uncertainty(telemetry.risk) * 50).toFixed(1)} points unknown</span>
+    </div>
+    <dl class="totals">
+      <div>
+        <dt>COST</dt>
+        <dd>{telemetry.risk.cost}<small>k</small></dd>
+      </div>
+      <div>
+        <dt>REDUNDANCY MASS</dt>
+        <dd>{telemetry.risk.redundancyMass_kg.toFixed(0)}<small>kg</small></dd>
+      </div>
+    </dl>
+  </header>
+
+  <div class="slots">
+    {#each telemetry.vehicle.slots as slot (slot.slotId)}
+      {@const line = lineFor(slot.slotId)}
+      <article class="slot" class:changed={changed.has(slot.slotId)}>
+        <div class="identity">
+          <h3>{line?.label ?? slot.partId}</h3>
+          <span class="system">{line?.system ?? ''}</span>
+        </div>
+
+        <div class="dial qa">
+          <span class="label">QUALITY ASSURANCE</span>
+          <div class="options">
+            {#each QA_LEVELS as level (level)}
+              <button
+                type="button"
+                class:active={slot.qaLevel === level}
+                onclick={() => mission.setSlotQa(slot.slotId, level as QaLevel)}
+              >
+                {qaLevels[level].title}
+                <small>×{qaLevels[level].costMultiplier}</small>
+              </button>
+            {/each}
+          </div>
+        </div>
+
+        <div class="dial units">
+          <span class="label">UNITS</span>
+          <div class="stepper">
+            <button
+              type="button"
+              disabled={slot.units <= 1}
+              onclick={() => mission.setSlotUnits(slot.slotId, slot.units - 1)}>−</button
+            >
+            <span class="count">{slot.units}</span>
+            <button
+              type="button"
+              disabled={slot.units >= 3}
+              onclick={() => mission.setSlotUnits(slot.slotId, slot.units + 1)}>+</button
+            >
+          </div>
+        </div>
+
+        <div class="contribution">
+          <span class="label">CONTRIBUTES</span>
+          <span class="value">
+            {percent(line?.contribution[0] ?? 0)} – {percent(line?.contribution[1] ?? 0)}
+          </span>
+        </div>
+      </article>
+    {/each}
+  </div>
+
+  <footer class="actions">
+    <p class="note">
+      {#if dirty}
+        <strong>{telemetry.pendingChanges.length}</strong> slot{telemetry.pendingChanges.length === 1
+          ? ''
+          : 's'} changed. Those get new hardware; every other part stays the one it was.
+      {:else}
+        Nothing changed yet. Applying now would fly the identical vehicle.
+      {/if}
+    </p>
+    <div class="buttons">
+      <button type="button" onclick={() => mission.closePlanner()}>
+        DISCARD <kbd>P</kbd>
+      </button>
+      <button type="button" class="primary" onclick={() => mission.applyPlan()}>
+        BUILD AND ROLL OUT
+      </button>
+    </div>
+  </footer>
+</section>
+
+<style>
+  .planner {
+    display: flex;
+    flex-direction: column;
+    gap: 0.8rem;
+  }
+
+  .summary {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 1.5rem;
+    border: 1px solid rgba(255, 194, 92, 0.3);
+    background: rgba(255, 194, 92, 0.04);
+    border-radius: 3px;
+    padding: 0.85rem 1rem;
+  }
+
+  .headline {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+  }
+
+  .headline .value {
+    font-size: 1.6rem;
+    color: #ffc25c;
+    letter-spacing: 0.04em;
+  }
+
+  .headline .spread {
+    font-size: 0.62rem;
+    letter-spacing: 0.1em;
+    opacity: 0.5;
+  }
+
+  .label {
+    font-size: 0.55rem;
+    letter-spacing: 0.22em;
+    opacity: 0.45;
+  }
+
+  .totals {
+    display: flex;
+    gap: 1.6rem;
+    margin: 0;
+  }
+
+  .totals dt {
+    font-size: 0.55rem;
+    letter-spacing: 0.18em;
+    opacity: 0.45;
+  }
+
+  .totals dd {
+    margin: 0.2rem 0 0;
+    font-size: 1.1rem;
+    text-align: right;
+  }
+
+  .totals small {
+    font-size: 0.6rem;
+    opacity: 0.5;
+    margin-left: 0.15rem;
+  }
+
+  .slots {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+  }
+
+  .slot {
+    display: grid;
+    grid-template-columns: minmax(150px, 1fr) minmax(300px, 2fr) auto minmax(120px, auto);
+    align-items: center;
+    gap: 1rem;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-left: 2px solid rgba(255, 255, 255, 0.12);
+    border-radius: 3px;
+    background: rgba(255, 255, 255, 0.02);
+    padding: 0.6rem 0.85rem;
+  }
+
+  .slot.changed {
+    border-left-color: #ffc25c;
+    background: rgba(255, 194, 92, 0.05);
+  }
+
+  .identity h3 {
+    margin: 0;
+    font-size: 0.75rem;
+    letter-spacing: 0.06em;
+    color: #e8fff2;
+  }
+
+  .identity .system {
+    font-size: 0.55rem;
+    letter-spacing: 0.2em;
+    opacity: 0.4;
+  }
+
+  .dial {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+  }
+
+  .options {
+    display: flex;
+    gap: 0.25rem;
+    flex-wrap: wrap;
+  }
+
+  button {
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 2px;
+    color: inherit;
+    font: inherit;
+    font-size: 0.62rem;
+    letter-spacing: 0.06em;
+    padding: 0.3rem 0.5rem;
+    cursor: pointer;
+  }
+
+  button:hover:not(:disabled) {
+    border-color: rgba(109, 252, 174, 0.45);
+  }
+
+  button:disabled {
+    opacity: 0.3;
+    cursor: default;
+  }
+
+  .options button.active {
+    border-color: rgba(109, 252, 174, 0.65);
+    color: #6dfcae;
+    background: rgba(109, 252, 174, 0.07);
+  }
+
+  .options button small {
+    opacity: 0.45;
+    margin-left: 0.3rem;
+  }
+
+  .stepper {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  .stepper .count {
+    min-width: 1.2rem;
+    text-align: center;
+    font-size: 0.85rem;
+  }
+
+  .contribution {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+    text-align: right;
+  }
+
+  .contribution .value {
+    font-size: 0.72rem;
+    color: #ffc25c;
+    white-space: nowrap;
+  }
+
+  .actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1.5rem;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    padding-top: 0.7rem;
+  }
+
+  .note {
+    margin: 0;
+    font-size: 0.66rem;
+    opacity: 0.6;
+  }
+
+  .note strong {
+    color: #ffc25c;
+  }
+
+  .buttons {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .buttons button {
+    font-size: 0.66rem;
+    letter-spacing: 0.14em;
+    padding: 0.5rem 0.9rem;
+  }
+
+  .buttons .primary {
+    border-color: rgba(109, 252, 174, 0.5);
+    color: #6dfcae;
+  }
+
+  kbd {
+    font: inherit;
+    font-size: 0.85em;
+    opacity: 0.45;
+  }
+</style>

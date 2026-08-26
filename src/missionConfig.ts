@@ -52,6 +52,26 @@ export function partDef(partId: string): PartDef {
 }
 
 /**
+ * The launcher, carrying whatever redundancy the configuration added (§4.2).
+ *
+ * Backup hardware is not free: it goes on stage 1's dry mass, the ascent has
+ * to lift it, and the Δv it eats shows up in the orbit. That is the trade the
+ * planner exists for — lighter and riskier, or heavier and safer. The baseline
+ * hull already carries one of everything, so only the second and third unit
+ * are charged; counting the whole catalogue would tax a vehicle twice.
+ */
+export function withRedundancyMass(vehicle: VehicleConfig, seed: number): RocketDef {
+  const extra = buildVehicle(vehicle, qaLevels, seed).redundancyMass_kg;
+  if (extra === 0) return rocket;
+  return {
+    ...rocket,
+    stages: rocket.stages.map((stage, index) =>
+      index === 0 ? { ...stage, dryMass_kg: stage.dryMass_kg + extra } : stage,
+    ),
+  };
+}
+
+/**
  * How lethal a part's worst failure mode is (§5.4).
  *
  * The risk budget weights by this, and it is deliberately not the occurrence
@@ -92,7 +112,7 @@ export function createMissionConfig(
   const { vehicle = defaultVehicle, ...rest } = overrides;
   const seed = rest.seed ?? 42;
   return {
-    rocket,
+    rocket: withRedundancyMass(vehicle, seed),
     pitchProgram,
     checklist,
     causeGraph: loadCauseGraph(causeGraphData),

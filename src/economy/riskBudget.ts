@@ -39,6 +39,8 @@ export interface RiskBudget {
   readonly lossOfMission: readonly [number, number];
   readonly lines: readonly RiskLine[];
   readonly mass_kg: number;
+  /** What redundancy adds to the vehicle, and the ascent has to lift (§4.2). */
+  readonly redundancyMass_kg: number;
   readonly cost: number;
 }
 
@@ -102,6 +104,7 @@ export function computeRiskBudget(
     lossOfMission: [1 - survives(0), 1 - survives(1)],
     lines: [...lines].sort((a, b) => b.contribution[1] - a.contribution[1]),
     mass_kg: vehicle.mass_kg,
+    redundancyMass_kg: vehicle.redundancyMass_kg,
     cost: vehicle.cost,
   };
 }

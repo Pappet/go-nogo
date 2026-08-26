@@ -8,6 +8,7 @@
  *   Space    pause / resume
  *   + / -    time warp
  *   Q W E    measures in the diagnosis panel, in a frozen order
+ *   P        open / close the planner
  *   D        focus the diagnosis menu
  *   L        focus the event log
  *   Enter    GO in the poll / confirm measure
@@ -17,6 +18,10 @@
  * panel, which has three; the LAUNCH checklist has five switches and lost its
  * number keys to console switching. Giving it the same idiom keeps one mental
  * model instead of inventing a second scheme for the same gesture.
+ *
+ * `P` for the planner is an addition, not a change: §7.7 fixes the in-flight
+ * keys and the planner is a pre-flight screen, so it needed one of its own
+ * rather than a number that would have displaced a console.
  *
  * Resolution stays a pure function of the key, so the binding is testable and
  * the consoles keep no keyboard logic of their own.
@@ -33,6 +38,7 @@ export type HotkeyAction =
   | { kind: 'switchConsole'; slot: ConsoleSlot; index: number }
   | { kind: 'panelAction'; index: number }
   | { kind: 'focusDiagnosis' }
+  | { kind: 'togglePlanner' }
   | { kind: 'focusEventLog' }
   | { kind: 'confirm' }
   | { kind: 'togglePause' }
@@ -63,6 +69,8 @@ export function resolveHotkey(key: string): HotkeyAction | null {
       return { kind: 'focusDiagnosis' };
     case 'l':
       return { kind: 'focusEventLog' };
+    case 'p':
+      return { kind: 'togglePlanner' };
     case 'enter':
       return { kind: 'confirm' };
     case '+':

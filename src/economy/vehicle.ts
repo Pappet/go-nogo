@@ -44,6 +44,15 @@ export interface BuiltSlot {
 export interface BuiltVehicle {
   readonly slots: readonly BuiltSlot[];
   readonly mass_kg: number;
+  /**
+   * What redundancy costs the vehicle (§4.2).
+   *
+   * The baseline hull already carries one of everything — that mass is in the
+   * stage's dry mass and must not be counted twice. What a configuration adds
+   * is the second and third unit, and that is the number the ascent has to
+   * lift and the Δv has to pay for.
+   */
+  readonly redundancyMass_kg: number;
   readonly cost: number;
 }
 
@@ -80,6 +89,10 @@ export function buildVehicle(
   return {
     slots,
     mass_kg: slots.reduce((sum, slot) => sum + slot.mass_kg, 0),
+    redundancyMass_kg: slots.reduce(
+      (sum, slot) => sum + (slot.mass_kg / slot.units.length) * (slot.units.length - 1),
+      0,
+    ),
     cost: slots.reduce((sum, slot) => sum + slot.cost, 0),
   };
 }

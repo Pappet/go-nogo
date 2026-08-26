@@ -20,6 +20,7 @@
   import SevenSeg from '../widgets/SevenSeg.svelte';
   import EngineeringConsole from './engineering/EngineeringConsole.svelte';
   import LaunchConsole from './launch/LaunchConsole.svelte';
+  import ConfiguratorConsole from './configurator/ConfiguratorConsole.svelte';
   import PostMortemConsole from './postmortem/PostMortemConsole.svelte';
 
   const mission = new Mission();
@@ -83,9 +84,13 @@
         showReport = false;
         mission.switchConsole(action.slot);
         return;
+      case 'togglePlanner':
+        if (telemetry.plannerOpen) mission.closePlanner();
+        else mission.openPlanner();
+        return;
       case 'panelAction':
-        // Nothing on the post-mortem is commandable: the flight is over.
-        if (showReport) return;
+        // Neither the post-mortem nor the planner takes the flight's keys.
+        if (showReport || telemetry.plannerOpen) return;
         // The focused console decides what its panel actions are: checklist
         // switches in LAUNCH, diagnosis measures in ENGINEERING.
         if (telemetry.console === 'launch') {
@@ -108,7 +113,7 @@
         mission.switchConsole('launch');
         return;
       case 'confirm':
-        if (showReport) return;
+        if (showReport || telemetry.plannerOpen) return;
         if (telemetry.console === 'launch') mission.arm();
         else mission.acceptResultOffer();
         return;
@@ -149,7 +154,13 @@
   <header class="masthead">
     <div class="identity">
       <h1>GO<span>/</span>NOGO</h1>
-      <p>{showReport ? 'POST-MORTEM' : LABELS[telemetry.console]} · GN-1 VANGUARD</p>
+      <p>
+        {telemetry.plannerOpen
+          ? 'PLANNER'
+          : showReport
+            ? 'POST-MORTEM'
+            : LABELS[telemetry.console]} · GN-1 VANGUARD
+      </p>
     </div>
 
     <div class="clock">
@@ -205,16 +216,31 @@
     <button
       type="button"
       class="tab"
+      class:active={telemetry.plannerOpen}
+      disabled={telemetry.phase !== 'HOLD' && !telemetry.missionOver}
+      onclick={() => (telemetry.plannerOpen ? mission.closePlanner() : mission.openPlanner())}
+    >
+      <span class="key">P</span>
+      PLANNER
+    </button>
+    <button
+      type="button"
+      class="tab"
       class:active={showReport}
       disabled={!telemetry.missionOver}
-      onclick={() => (showReport = true)}
+      onclick={() => {
+        mission.closePlanner();
+        showReport = true;
+      }}
     >
       <span class="key">·</span>
       POST-MORTEM
     </button>
   </nav>
 
-  {#if showReport}
+  {#if telemetry.plannerOpen}
+    <ConfiguratorConsole {mission} />
+  {:else if showReport}
     <PostMortemConsole {mission} />
   {:else if telemetry.console === 'engineering'}
     <EngineeringConsole {mission} />

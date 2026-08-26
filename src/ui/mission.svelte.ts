@@ -23,7 +23,8 @@ import {
   computeRiskBudget,
   headlineRisk,
 } from '../economy/riskBudget.js';
-import { type VehicleConfig, buildVehicle } from '../economy/vehicle.js';
+import { type SlotChoice, type VehicleConfig, buildVehicle, changedSlots } from '../economy/vehicle.js';
+import type { QaLevel } from '../sim/parts/partInstance.js';
 import {
   type MissionReport,
   buildMissionReport,
@@ -143,6 +144,11 @@ export interface Telemetry {
 
   /** The live risk budget for the vehicle as configured (§5.4). */
   risk: RiskBudget;
+  /** The vehicle the planner is editing, and whether it is open. */
+  plannerOpen: boolean;
+  vehicle: VehicleConfig;
+  /** Slots the planner has changed but not yet applied — these will re-roll. */
+  pendingChanges: string[];
   /** True while the console is showing a flight restored from the auto-save. */
   resumedFromSave: boolean;
   /** True once the flight has an outcome to review — lost, or in orbit. */
@@ -169,8 +175,11 @@ export class Mission {
   /** Counts the missions this session has rolled, for the mission key. */
   private missionSerial = 1;
 
-  /** What the planner built. The configurator edits this (§5.4). */
+  /** What the vehicle currently flying was built to. */
   private vehicleConfig: VehicleConfig = defaultVehicle;
+  /** The planner's working copy. Applied, or thrown away, as one decision. */
+  private draft: VehicleConfig = defaultVehicle;
+  private plannerOpen = false;
 
   private engine = new Engine(createMissionSimulation(this.config), createMissionState(this.config));
   private commands: Command[] = [];
@@ -292,7 +301,67 @@ export class Mission {
     this.announcedEvents = 0;
     this.console = 'launch';
     this.resumedFromSave = false;
+    this.plannerOpen = false;
     this.telemetry = this.snapshot();
+  }
+
+  // ---------- The planner (§5.4) ----------
+
+  /**
+   * Opens the planner on a copy of what is currently built.
+   *
+   * Only on the pad: the vehicle decides which anomalies the mission has, so
+   * editing it in flight would rewrite a crisis the player is already inside.
+   */
+  openPlanner(): void {
+    if (this.state.phase !== 'HOLD' && !this.telemetry.missionOver) return;
+    this.draft = this.vehicleConfig;
+    this.plannerOpen = true;
+    this.telemetry = this.snapshot();
+  }
+
+  closePlanner(): void {
+    this.plannerOpen = false;
+    this.draft = this.vehicleConfig;
+    this.telemetry = this.snapshot();
+  }
+
+  private editSlot(slotId: string, change: Partial<SlotChoice>): void {
+    this.draft = {
+      slots: this.draft.slots.map((slot) =>
+        slot.slotId === slotId ? { ...slot, ...change } : slot,
+      ),
+    };
+    this.telemetry = this.snapshot();
+  }
+
+  setSlotQa(slotId: string, qaLevel: QaLevel): void {
+    this.editSlot(slotId, { qaLevel });
+  }
+
+  setSlotUnits(slotId: string, units: number): void {
+    this.editSlot(slotId, { units: Math.max(1, Math.min(3, units)) });
+  }
+
+  /**
+   * Flies the drafted vehicle — §5.4's second retry path, done properly.
+   *
+   * Same seed, same mission key: only the slots the player actually touched
+   * get new hardware, because every part is keyed by its slot. A cause whose
+   * parts did not change is compared against the same draw at the same
+   * threshold and therefore behaves identically. That is what makes the
+   * re-plan surgical rather than a new mission wearing the old one's name.
+   */
+  applyPlan(): void {
+    this.vehicleConfig = this.draft;
+    this.plannerOpen = false;
+    this.config = createMissionConfig({
+      seed: this.config.seed,
+      missionKey: this.config.missionKey,
+      vehicle: this.vehicleConfig,
+    });
+    this.clearSave();
+    this.reset();
   }
 
   /**
@@ -308,20 +377,19 @@ export class Mission {
   }
 
   /**
-   * Retry path 2 (§5.4): a different draw.
+   * Retry path 2 (§5.4): the planner reopens with the last configuration.
    *
-   * §5.4 calls this button "new configuration", and means it surgically: the
-   * planner reopens and only the parts the player changed re-roll. Phase 1 has
-   * no configurator (that is Phase 2), so there is nothing to change and
-   * nothing to hold fixed — this rolls a whole new mission key, and every
-   * anomaly with it. Named for what it does rather than for what §5.4 will
-   * eventually make it do.
+   * "Only changed parts re-roll" is not a special case here — it is what the
+   * serial keying already does. The player changes a valve; that slot builds
+   * new units and every other slot keeps the exact hardware it flew with.
    */
-  retryNewMission(): void {
-    this.missionSerial += 1;
-    this.config = createMissionConfig({ missionKey: `mission-${this.missionSerial}` });
+  retryNewConfiguration(): void {
+    this.draft = this.vehicleConfig;
+    this.plannerOpen = true;
     this.clearSave();
     this.reset();
+    this.plannerOpen = true;
+    this.telemetry = this.snapshot();
   }
 
   // ---------- Save and resume: a run truncated at a tick (§8.2 rule 9) ----------
@@ -434,7 +502,7 @@ export class Mission {
           state.diagnosis.anomalies,
           state.diagnosis.results,
           state.missionLost,
-          headlineRisk(this.riskBudget()),
+          headlineRisk(this.riskBudget(this.vehicleConfig)),
           TICKS_PER_SECOND,
         )
       : null;
@@ -472,7 +540,10 @@ export class Mission {
               measureTitle: this.config.causeGraph.measure(state.diagnosis.pause.offer.measureId).title,
             },
 
-      risk: this.riskBudget(),
+      risk: this.riskBudget(this.plannerOpen ? this.draft : this.vehicleConfig),
+      plannerOpen: this.plannerOpen,
+      vehicle: this.plannerOpen ? this.draft : this.vehicleConfig,
+      pendingChanges: changedSlots(this.vehicleConfig, this.draft),
       resumedFromSave: this.resumedFromSave,
       missionOver: over,
       report,
@@ -480,10 +551,10 @@ export class Mission {
     };
   }
 
-  /** The risk budget for the vehicle as configured, priced for this mission. */
-  private riskBudget(): RiskBudget {
+  /** The risk budget for a configuration, priced for this mission. */
+  private riskBudget(vehicle: VehicleConfig): RiskBudget {
     return computeRiskBudget(
-      buildVehicle(this.vehicleConfig, qaLevels, this.config.seed),
+      buildVehicle(vehicle, qaLevels, this.config.seed),
       phaseExposure,
       rocket.nominalMissionDuration_s,
       partLethality,
@@ -666,7 +737,10 @@ function emptyTelemetry(): Telemetry {
     timeline: [],
     channels: { capacity: 0, inUse: 0 },
     resultOffer: null,
-    risk: { lossOfMission: [0, 0], lines: [], mass_kg: 0, cost: 0 },
+    risk: { lossOfMission: [0, 0], lines: [], mass_kg: 0, redundancyMass_kg: 0, cost: 0 },
+    plannerOpen: false,
+    vehicle: { slots: [] },
+    pendingChanges: [],
     resumedFromSave: false,
     missionOver: false,
     report: null,

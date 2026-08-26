@@ -7,9 +7,10 @@
    * "mission failed" is not. Everything on this screen is derived from state
    * the simulation already holds, so the account cannot drift from the flight.
    *
-   * §5.4's two retry buttons close it. The first is exact — same seed, same
-   * configuration. The second is not, and says so: §5.4 wants the planner to
-   * reopen and only the changed parts to re-roll, and Phase 1 has no planner.
+   * §5.4's two retry buttons close it, and both now mean what §5.4 says. The
+   * first is exact: same seed, same configuration, the identical crisis. The
+   * second reopens the planner, and only the parts the player changes are
+   * rebuilt — every other slot keeps the hardware it just flew with.
    */
   import { Mission } from '../../mission.svelte.js';
 
@@ -158,9 +159,9 @@
         SAME SEED, SAME CONFIGURATION
         <small>The identical run. Diagnose it properly this time.</small>
       </button>
-      <button type="button" onclick={() => mission.retryNewMission()}>
-        NEW MISSION
-        <small>A fresh draw — everything re-rolls. The configurator arrives in Phase 2.</small>
+      <button type="button" onclick={() => mission.retryNewConfiguration()}>
+        NEW CONFIGURATION
+        <small>The planner reopens. Only the parts you change are rebuilt.</small>
       </button>
     </footer>
   {/if}
