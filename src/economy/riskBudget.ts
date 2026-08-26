@@ -1,0 +1,111 @@
+/**
+ * The risk budget, live (concept §5.4).
+ *
+ * "Loss-of-mission estimate from bands, phase factors, redundancy, duration —
+ * every line item with a price tag you can push on." Phase 1 shipped one
+ * static number; this computes it from the vehicle actually configured.
+ *
+ * The important restraint: the budget is built from what the player can *see*.
+ * §4 says the spread is visible and the exact value is not — so the estimate
+ * is an interval derived from each unit's `visibleBand`, and buying QA narrows
+ * it rather than moving it. A budget computed from `effectiveReliability`
+ * would be a more accurate number that leaks the answer, and the game is about
+ * deciding under a band.
+ */
+import type { BuiltSlot, BuiltVehicle } from './vehicle.js';
+
+export interface PhaseExposure {
+  /** Per system: how much of the mission actually stresses it. */
+  readonly bySystem: Readonly<Record<string, number>>;
+  /** Mission length the exposures are quoted for. */
+  readonly referenceDuration_s: number;
+}
+
+export interface RiskLine {
+  readonly slotId: string;
+  readonly label: string;
+  readonly system: string;
+  readonly units: number;
+  /** Failure probability for this slot, low and high end of the visible band. */
+  readonly contribution: readonly [number, number];
+  /** What is on the certificate, for the console to show next to the number. */
+  readonly qaLevel: string;
+  readonly mass_kg: number;
+  readonly cost: number;
+}
+
+export interface RiskBudget {
+  /** Loss of mission, low and high end. Collapses to a point under full QA. */
+  readonly lossOfMission: readonly [number, number];
+  readonly lines: readonly RiskLine[];
+  readonly mass_kg: number;
+  readonly cost: number;
+}
+
+/** Probability that every unit in a slot fails — the slot's own failure (§4.2). */
+function slotFailure(slot: BuiltSlot, exposure: number, end: 0 | 1): number {
+  let all = 1;
+  for (const unit of slot.units) {
+    // A unit only gets to fail during the part of the mission that stresses it.
+    all *= Math.min(1, (1 - unit.visibleBand[end]) * exposure);
+  }
+  return all;
+}
+
+/**
+ * Prices a built vehicle.
+ *
+ * `duration_s` scales every exposure: the same hardware flown twice as long is
+ * exposed twice as long, which is the "duration" term §5.4 asks for.
+ */
+export function computeRiskBudget(
+  vehicle: BuiltVehicle,
+  exposure: PhaseExposure,
+  duration_s: number,
+): RiskBudget {
+  const scale = duration_s / exposure.referenceDuration_s;
+
+  const lines = vehicle.slots.map((slot) => {
+    const systemExposure = (exposure.bySystem[slot.system] ?? 1) * scale;
+    return {
+      slotId: slot.slotId,
+      label: slot.title,
+      system: slot.system,
+      units: slot.units.length,
+      // Band end 1 is the optimistic reliability, so it gives the low failure
+      // end. Ordered here rather than left to the caller to sort out.
+      contribution: [slotFailure(slot, systemExposure, 1), slotFailure(slot, systemExposure, 0)] as
+        readonly [number, number],
+      qaLevel: slot.units[0]?.qaLevel ?? 'series',
+      mass_kg: slot.mass_kg,
+      cost: slot.cost,
+    };
+  });
+
+  // The vehicle survives only if every slot does.
+  const survives = (end: 0 | 1): number =>
+    lines.reduce((product, line) => product * (1 - line.contribution[end]), 1);
+
+  return {
+    lossOfMission: [1 - survives(0), 1 - survives(1)],
+    lines: [...lines].sort((a, b) => b.contribution[1] - a.contribution[1]),
+    mass_kg: vehicle.mass_kg,
+    cost: vehicle.cost,
+  };
+}
+
+/** The single number for the masthead, when there is only room for one. */
+export function headlineRisk(budget: RiskBudget): number {
+  return (budget.lossOfMission[0] + budget.lossOfMission[1]) / 2;
+}
+
+/**
+ * How wide the estimate still is.
+ *
+ * This is the number QA actually buys, and worth showing on its own: a player
+ * who pays for qualification is not buying a lower risk, they are buying a
+ * smaller unknown.
+ */
+export function uncertainty(budget: RiskBudget): number {
+  return budget.lossOfMission[1] - budget.lossOfMission[0];
+}

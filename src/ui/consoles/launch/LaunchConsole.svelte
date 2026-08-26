@@ -11,9 +11,9 @@
     Mission,
     checklistItems,
     maxDynamicPressureLimit_Pa,
-    risk,
     targetOrbit,
   } from '../../mission.svelte.js';
+  import { uncertainty } from '../../../economy/riskBudget.js';
   import { panelActionHotkey } from '../../hotkeys.js';
   import {
     formatAltitude,
@@ -90,17 +90,30 @@
         <div class="risk">
           <h3>
             RISK BUDGET
-            <span class="total">{(risk.lossOfMission * 100).toFixed(1)} % LOM</span>
+            <span class="total">
+              {(telemetry.risk.lossOfMission[0] * 100).toFixed(1)}–{(
+                telemetry.risk.lossOfMission[1] * 100
+              ).toFixed(1)} % LOM
+            </span>
           </h3>
           <ul>
-            {#each risk.lines as line (line.label)}
+            {#each telemetry.risk.lines as line (line.slotId)}
               <li>
-                <span>{line.label}</span>
-                <span class="value">{(line.contribution * 100).toFixed(1)} %</span>
+                <span>
+                  {line.label}{#if line.units > 1}<em> ×{line.units}</em>{/if}
+                </span>
+                <span class="value">
+                  {(line.contribution[0] * 100).toFixed(1)}–{(line.contribution[1] * 100).toFixed(
+                    1,
+                  )} %
+                </span>
               </li>
             {/each}
           </ul>
-          <p>Static this phase — the same number every flight, and the post-mortem quotes it back.</p>
+          <p>
+            An estimate, not a number: the spread is what you have not paid to find out. Currently
+            ±{(uncertainty(telemetry.risk) * 50).toFixed(1)} points wide.
+          </p>
         </div>
       {/if}
     </section>
@@ -217,6 +230,12 @@
     display: flex;
     flex-direction: column;
     gap: 0.22rem;
+  }
+
+  .risk li em {
+    font-style: normal;
+    color: #6dfcae;
+    opacity: 0.8;
   }
 
   .risk li {

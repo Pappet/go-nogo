@@ -8,7 +8,21 @@
  * commands, and the console reads a snapshot taken after the ticks have run.
  */
 import { dismissOffer } from '../sim/pauseModel.js';
-import { createMissionConfig, checklist, rocket, pitchProgram, riskBudget } from '../missionConfig.js';
+import {
+  createMissionConfig,
+  checklist,
+  defaultVehicle,
+  phaseExposure,
+  pitchProgram,
+  qaLevels,
+  rocket,
+} from '../missionConfig.js';
+import {
+  type RiskBudget,
+  computeRiskBudget,
+  headlineRisk,
+} from '../economy/riskBudget.js';
+import { type VehicleConfig, buildVehicle } from '../economy/vehicle.js';
 import {
   type MissionReport,
   buildMissionReport,
@@ -126,6 +140,8 @@ export interface Telemetry {
   channels: ChannelView;
   resultOffer: { anomalyId: string; measureTitle: string } | null;
 
+  /** The live risk budget for the vehicle as configured (§5.4). */
+  risk: RiskBudget;
   /** True while the console is showing a flight restored from the auto-save. */
   resumedFromSave: boolean;
   /** True once the flight has an outcome to review — lost, or in orbit. */
@@ -138,7 +154,7 @@ export interface Telemetry {
 export const checklistItems = checklist.items;
 export const maxDynamicPressureLimit_Pa = rocket.maxDynamicPressure_Pa;
 export const targetOrbit = rocket.targetOrbit;
-export const risk = riskBudget;
+
 
 export class Mission {
   telemetry = $state<Telemetry>(emptyTelemetry());
@@ -151,6 +167,9 @@ export class Mission {
   private config: MissionConfigInput = createMissionConfig();
   /** Counts the missions this session has rolled, for the mission key. */
   private missionSerial = 1;
+
+  /** What the planner built. The configurator edits this (§5.4). */
+  private vehicleConfig: VehicleConfig = defaultVehicle;
 
   private engine = new Engine(createMissionSimulation(this.config), createMissionState(this.config));
   private commands: Command[] = [];
@@ -414,7 +433,7 @@ export class Mission {
           state.diagnosis.anomalies,
           state.diagnosis.results,
           state.missionLost,
-          riskBudget.lossOfMission,
+          headlineRisk(this.riskBudget()),
           TICKS_PER_SECOND,
         )
       : null;
@@ -452,11 +471,21 @@ export class Mission {
               measureTitle: this.config.causeGraph.measure(state.diagnosis.pause.offer.measureId).title,
             },
 
+      risk: this.riskBudget(),
       resumedFromSave: this.resumedFromSave,
       missionOver: over,
       report,
       verdict: report === null ? '' : verdictLine(report),
     };
+  }
+
+  /** The risk budget for the vehicle as configured, priced for this mission. */
+  private riskBudget(): RiskBudget {
+    return computeRiskBudget(
+      buildVehicle(this.vehicleConfig, qaLevels, this.config.seed),
+      phaseExposure,
+      rocket.nominalMissionDuration_s,
+    );
   }
 
   /**
@@ -635,6 +664,7 @@ function emptyTelemetry(): Telemetry {
     timeline: [],
     channels: { capacity: 0, inUse: 0 },
     resultOffer: null,
+    risk: { lossOfMission: [0, 0], lines: [], mass_kg: 0, cost: 0 },
     resumedFromSave: false,
     missionOver: false,
     report: null,

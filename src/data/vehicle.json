@@ -1,0 +1,10 @@
+{
+  "description": "The default vehicle configuration: which slots the GN-1 Vanguard has and what the planner starts them at. The configurator edits this; a campaign stores its own.",
+  "slots": [
+    { "slotId": "slot_main_valve", "partId": "part_main_valve", "qaLevel": "series", "units": 1 },
+    { "slotId": "slot_feed_line", "partId": "part_feed_line", "qaLevel": "series", "units": 1 },
+    { "slotId": "slot_pressure_sensor", "partId": "part_pressure_sensor", "qaLevel": "series", "units": 1 },
+    { "slotId": "slot_power_bus", "partId": "part_power_bus", "qaLevel": "series", "units": 1 },
+    { "slotId": "slot_telemetry_tx", "partId": "part_telemetry_tx", "qaLevel": "series", "units": 1 }
+  ]
+}

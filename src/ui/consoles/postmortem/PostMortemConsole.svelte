@@ -11,7 +11,7 @@
    * configuration. The second is not, and says so: §5.4 wants the planner to
    * reopen and only the changed parts to re-roll, and Phase 1 has no planner.
    */
-  import { Mission, risk } from '../../mission.svelte.js';
+  import { Mission } from '../../mission.svelte.js';
 
   interface Props {
     mission: Mission;
@@ -41,19 +41,27 @@
 
     <div class="grid">
       <section class="panel budget">
-        <h3>RISK BUDGET</h3>
-        <p class="headline">{percent(risk.lossOfMission)}<span>loss of mission</span></p>
+        <h3>RISK BUDGET AS FLOWN</h3>
+        <p class="headline">
+          {percent(telemetry.risk.lossOfMission[0])}–{percent(telemetry.risk.lossOfMission[1])}<span
+            >loss of mission</span
+          >
+        </p>
         <ul>
-          {#each risk.lines as line (line.label)}
+          {#each telemetry.risk.lines as line (line.slotId)}
             <li>
-              <span class="label">{line.label}</span>
-              <span class="value">{percent(line.contribution)}</span>
+              <span class="label">
+                {line.label}{#if line.units > 1}<em> ×{line.units}</em>{/if} · {line.qaLevel}
+              </span>
+              <span class="value">
+                {percent(line.contribution[0])}–{percent(line.contribution[1])}
+              </span>
             </li>
           {/each}
         </ul>
         <p class="footnote">
-          Static in Phase 1: the same estimate every flight. Pushing on the line items is what the
-          configurator is for.
+          What the vehicle was priced at before it flew, worst line first. The spread is what was
+          never paid to find out.
         </p>
       </section>
 
@@ -255,6 +263,12 @@
 
   .budget .value {
     color: #ffc25c;
+    white-space: nowrap;
+  }
+
+  .budget .label em {
+    font-style: normal;
+    color: #6dfcae;
   }
 
   .footnote {

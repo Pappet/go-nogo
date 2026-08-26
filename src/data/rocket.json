@@ -29,5 +29,6 @@
   "targetOrbit": {
     "periapsisAltitude_m": 200000,
     "apoapsisAltitude_m": 250000
-  }
+  },
+  "nominalMissionDuration_s": 600
 }
