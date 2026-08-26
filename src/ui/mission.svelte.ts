@@ -14,6 +14,7 @@ import {
   defaultVehicle,
   phaseExposure,
   pitchProgram,
+  contracts,
   doctrineById,
   doctrines,
   partLethality,
@@ -21,6 +22,17 @@ import {
   rocket,
 } from '../missionConfig.js';
 import { type DoctrineDef, nearestAllowedQa, qaLocked } from '../economy/doctrine.js';
+import {
+  type CampaignState,
+  createCampaign,
+  nextMissionKey,
+} from '../economy/campaign.js';
+import {
+  type Contract,
+  generateBoard,
+  meetsRequirements,
+  settleContract,
+} from '../economy/markets.js';
 import { QA_LEVELS } from '../sim/parts/partInstance.js';
 import {
   type RiskBudget,
@@ -150,6 +162,13 @@ export interface Telemetry {
   risk: RiskBudget;
   /** The doctrine this campaign is flying under (§6.1). */
   doctrine: DoctrineDef;
+  /** The campaign's books (§6). */
+  campaign: CampaignState;
+  /** This week's offers (§6.2), and the one that was taken. */
+  board: readonly Contract[];
+  contract: Contract | null;
+  /** Why the drafted vehicle would not be accepted, if it would not. */
+  contractShortfall: readonly string[];
   /** The vehicle the planner is editing, and whether it is open. */
   plannerOpen: boolean;
   vehicle: VehicleConfig;
@@ -178,6 +197,21 @@ export class Mission {
    * the graph, priors and capacities all come out of here.
    */
   private config: MissionConfigInput = createMissionConfig();
+  /**
+   * Rebuilds the mission for where the campaign now stands.
+   *
+   * The key comes from the campaign, so mission 2 is a different flight from
+   * mission 1 — while the campaign seed keeps every part serial stable across
+   * all of them, which is what §5.4's re-roll and the post-mortem's what-if
+   * both need.
+   */
+  private reconfigure(): void {
+    this.config = createMissionConfig({
+      seed: this.campaign.seed,
+      missionKey: nextMissionKey(this.campaign),
+      vehicle: this.vehicleConfig,
+    });
+  }
   /** Counts the missions this session has rolled, for the mission key. */
   private missionSerial = 1;
 
@@ -188,6 +222,10 @@ export class Mission {
   private plannerOpen = false;
   /** Chosen once per campaign (§6.1). Defaults until a campaign picks one. */
   private doctrine: DoctrineDef = doctrines[0];
+  private campaign: CampaignState = createCampaign(doctrines[0], 42, defaultVehicle);
+  private contract: Contract | null = null;
+  /** Set once the flown contract has been booked, so it is booked once. */
+  private settled = false;
 
   private engine = new Engine(createMissionSimulation(this.config), createMissionState(this.config));
   private commands: Command[] = [];
@@ -213,6 +251,7 @@ export class Mission {
       if (this.state.missionLost && !this.engine.isPaused) this.engine.pause();
       this.captureTrail();
       this.announce();
+      this.settleIfFlown(this.state);
       this.telemetry = this.snapshot();
 
       if (now - this.lastAutosaveMs >= AUTOSAVE_INTERVAL_MS) {
@@ -310,6 +349,7 @@ export class Mission {
     this.console = 'launch';
     this.resumedFromSave = false;
     this.plannerOpen = false;
+    this.settled = false;
     this.telemetry = this.snapshot();
   }
 
@@ -364,6 +404,8 @@ export class Mission {
    */
   chooseDoctrine(doctrineId: string): void {
     this.doctrine = doctrineById(doctrineId);
+    this.campaign = createCampaign(this.doctrine, this.campaign.seed, this.vehicleConfig);
+    this.contract = null;
     const legal = (vehicle: VehicleConfig): VehicleConfig => ({
       slots: vehicle.slots.map((slot) => ({
         ...slot,
@@ -372,11 +414,8 @@ export class Mission {
     });
     this.vehicleConfig = legal(this.vehicleConfig);
     this.draft = legal(this.draft);
-    this.config = createMissionConfig({
-      seed: this.config.seed,
-      missionKey: this.config.missionKey,
-      vehicle: this.vehicleConfig,
-    });
+    this.campaign.vehicle = this.vehicleConfig;
+    this.reconfigure();
     this.clearSave();
     this.reset();
     this.plannerOpen = true;
@@ -399,11 +438,7 @@ export class Mission {
   applyPlan(): void {
     this.vehicleConfig = this.draft;
     this.plannerOpen = false;
-    this.config = createMissionConfig({
-      seed: this.config.seed,
-      missionKey: this.config.missionKey,
-      vehicle: this.vehicleConfig,
-    });
+    this.reconfigure();
     this.clearSave();
     this.reset();
   }
@@ -428,6 +463,10 @@ export class Mission {
    * new units and every other slot keeps the exact hardware it flew with.
    */
   retryNewConfiguration(): void {
+    // The campaign has moved on: the flown contract is booked, the week has
+    // turned, and the next mission is a new flight rather than the same one.
+    this.reconfigure();
+    this.contract = null;
     this.draft = this.vehicleConfig;
     this.plannerOpen = true;
     this.clearSave();
@@ -586,6 +625,10 @@ export class Mission {
 
       risk: this.riskBudget(this.plannerOpen ? this.draft : this.vehicleConfig),
       doctrine: this.doctrine,
+      campaign: this.campaign,
+      board: generateBoard(contracts, this.campaign, this.campaign.week),
+      contract: this.contract,
+      contractShortfall: this.shortfall(this.plannerOpen ? this.draft : this.vehicleConfig),
       plannerOpen: this.plannerOpen,
       vehicle: this.plannerOpen ? this.draft : this.vehicleConfig,
       pendingChanges: changedSlots(this.vehicleConfig, this.draft),
@@ -594,6 +637,41 @@ export class Mission {
       report,
       verdict: report === null ? '' : verdictLine(report),
     };
+  }
+
+  /** What the accepted contract would refuse about this vehicle (§6.2). */
+  private shortfall(vehicle: VehicleConfig): string[] {
+    if (this.contract === null) return [];
+    return [
+      ...meetsRequirements(
+        this.contract,
+        vehicle.slots.map((slot) => slot.qaLevel),
+        QA_LEVELS,
+        headlineRisk(this.riskBudget(vehicle)),
+      ).reasons,
+    ];
+  }
+
+  /** Takes an offer off this week's board. */
+  acceptContract(templateId: string): void {
+    const board = generateBoard(contracts, this.campaign, this.campaign.week);
+    this.contract = board.find((entry) => entry.templateId === templateId) ?? null;
+    this.telemetry = this.snapshot();
+  }
+
+  /**
+   * Books the flown contract, once.
+   *
+   * A mission counts as delivered when the vehicle survived to the orbit
+   * check. Anything else is a failure the customer pays nothing for and fines
+   * on top — §6.2's penalty clause is what makes a cheap vehicle a decision
+   * rather than a free ride.
+   */
+  private settleIfFlown(state: MissionState): void {
+    if (this.settled || this.contract === null || !this.isOver(state)) return;
+    this.settled = true;
+    settleContract(contracts, this.campaign, this.contract, !state.missionLost);
+    this.campaign.vehicle = this.vehicleConfig;
   }
 
   /** The risk budget for a configuration, priced for this mission. */
@@ -784,6 +862,10 @@ function emptyTelemetry(): Telemetry {
     resultOffer: null,
     risk: { lossOfMission: [0, 0], lines: [], mass_kg: 0, redundancyMass_kg: 0, cost: 0 },
     doctrine: doctrines[0],
+    campaign: createCampaign(doctrines[0], 42, { slots: [] }),
+    board: [],
+    contract: null,
+    contractShortfall: [],
     plannerOpen: false,
     vehicle: { slots: [] },
     pendingChanges: [],

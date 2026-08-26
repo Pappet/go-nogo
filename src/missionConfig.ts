@@ -7,6 +7,7 @@
  */
 import anomalyData from './data/anomalies.json' with { type: 'json' };
 import causesData from './data/causes.json' with { type: 'json' };
+import contractData from './data/contracts.json' with { type: 'json' };
 import doctrineData from './data/doctrines.json' with { type: 'json' };
 import checklistData from './data/checklist.json' with { type: 'json' };
 import partsData from './data/parts.json' with { type: 'json' };
@@ -22,6 +23,7 @@ import type { PitchProgram } from './sim/physics/ascentProgram.js';
 import type { RocketDef } from './sim/physics/thrust.js';
 import { type PhaseExposure, causeProbabilities } from './economy/riskBudget.js';
 import type { DoctrineDef } from './economy/doctrine.js';
+import type { ContractsData } from './economy/markets.js';
 import { type VehicleConfig, buildVehicle } from './economy/vehicle.js';
 import type { PartDef, QaLevelTable } from './sim/parts/partInstance.js';
 import type { AnomalySettings } from './sim/systems/anomaly.js';
@@ -41,6 +43,9 @@ export const causeGraphData = causesData as unknown as CauseGraphData;
 
 /** One loaded graph for the lookups that do not want to rebuild it each call. */
 const sharedGraph = loadCauseGraph(causeGraphData);
+
+/** Markets, contract templates and the board's own numbers (§6.2). */
+export const contracts = contractData as unknown as ContractsData;
 
 /** The three doctrines (§6.1). */
 export const doctrines = doctrineData.doctrines as unknown as readonly DoctrineDef[];

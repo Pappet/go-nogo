@@ -48,6 +48,48 @@
     {/each}
   </nav>
 
+  <section class="board">
+    <header>
+      <h2>WEEK {telemetry.campaign.week} · BOARD</h2>
+      <div class="books">
+        <span>CAPITAL <strong>{telemetry.campaign.capital}k</strong></span>
+        {#each Object.entries(telemetry.campaign.reputation) as [market, standing] (market)}
+          <span class="rep">
+            {market}
+            <strong class:red={standing < 0}>{standing > 0 ? `+${standing}` : standing}</strong>
+          </span>
+        {/each}
+      </div>
+    </header>
+
+    <div class="offers">
+      {#each telemetry.board as offer (offer.templateId)}
+        <button
+          type="button"
+          class="offer"
+          class:taken={telemetry.contract?.templateId === offer.templateId}
+          onclick={() => mission.acceptContract(offer.templateId)}
+        >
+          <span class="market">{offer.market}</span>
+          <span class="title">{offer.title}</span>
+          <span class="terms">
+            {offer.fee}k · penalty {offer.penalty}k · needs {offer.requiredQaLevel}
+            {#if offer.maxAcceptedRisk < 1}· max {(offer.maxAcceptedRisk * 100).toFixed(0)} % LOM{/if}
+            {#if offer.researchData > 0}· {offer.researchData} data{/if}
+          </span>
+        </button>
+      {/each}
+    </div>
+
+    {#if telemetry.contract !== null && telemetry.contractShortfall.length > 0}
+      <ul class="shortfall">
+        {#each telemetry.contractShortfall as reason (reason)}
+          <li>▲ {reason}</li>
+        {/each}
+      </ul>
+    {/if}
+  </section>
+
   <header class="summary">
     <div class="headline">
       <span class="label">LOSS OF MISSION</span>
@@ -191,6 +233,100 @@
 
   .doctrine.active .name {
     color: #6dfcae;
+  }
+
+  .board {
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 3px;
+    padding: 0.7rem 0.85rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+  }
+
+  .board header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  .board h2 {
+    margin: 0;
+    font-size: 0.6rem;
+    letter-spacing: 0.24em;
+    opacity: 0.5;
+  }
+
+  .books {
+    display: flex;
+    gap: 1.1rem;
+    white-space: nowrap;
+    font-size: 0.58rem;
+    letter-spacing: 0.14em;
+    opacity: 0.55;
+  }
+
+  .books strong {
+    color: #6dfcae;
+    font-weight: normal;
+    margin-left: 0.25rem;
+  }
+
+  .books strong.red {
+    color: #ff7a6b;
+  }
+
+  .offers {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 0.4rem;
+  }
+
+  .offer {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.18rem;
+    text-align: left;
+    padding: 0.5rem 0.65rem;
+  }
+
+  .offer .market {
+    font-size: 0.52rem;
+    letter-spacing: 0.2em;
+    opacity: 0.4;
+  }
+
+  .offer .title {
+    font-size: 0.7rem;
+    color: #e8fff2;
+  }
+
+  .offer .terms {
+    font-size: 0.58rem;
+    opacity: 0.5;
+    line-height: 1.4;
+  }
+
+  .offer.taken {
+    border-color: rgba(109, 252, 174, 0.6);
+    background: rgba(109, 252, 174, 0.06);
+  }
+
+  .offer.taken .title {
+    color: #6dfcae;
+  }
+
+  .shortfall {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    font-size: 0.62rem;
+    color: #ffc25c;
   }
 
   .summary {
