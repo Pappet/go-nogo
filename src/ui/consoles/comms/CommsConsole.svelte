@@ -12,6 +12,7 @@
    * currency the tech tree runs on. That sentence is the console.
    */
   import type { Mission } from '../../mission.svelte.js';
+  import { strings } from '../../strings.js';
 
   interface Props {
     mission: Mission;
@@ -37,10 +38,10 @@
 <section class="comms">
   <header class="link" class:dark={best === null}>
     <div class="state">
-      <span class="label">LINK</span>
+      <span class="label">{strings.comms.link}</span>
       <span class="value">
         {#if best === null}
-          ■ NO CONTACT
+          ■ {strings.comms.noContact}
         {:else}
           {best.title}
         {/if}
@@ -52,12 +53,12 @@
           )}
         </span>
       {:else}
-        <span class="detail">Nothing above the horizon. Data stays aboard.</span>
+        <span class="detail">{strings.comms.noContactBody}</span>
       {/if}
     </div>
 
     <div class="channels">
-      <span class="label">CHANNELS</span>
+      <span class="label">{strings.comms.channels}</span>
       <div class="matrix">
         {#each Array(telemetry.channels.capacity) as _, index (index)}
           <span
@@ -69,13 +70,15 @@
           ></span>
         {/each}
       </div>
-      <span class="count">{freeChannels} free of {telemetry.channels.capacity}</span>
+      <span class="count">
+        {strings.comms.channelsFree(freeChannels, telemetry.channels.capacity)}
+      </span>
     </div>
   </header>
 
   <div class="grid">
     <section class="panel stations">
-      <h2>GROUND STATIONS</h2>
+      <h2>{strings.comms.groundStations}</h2>
       <ul>
         {#each telemetry.stations as station (station.id)}
           <li class:visible={station.visible}>
@@ -90,7 +93,7 @@
               {#if station.visible}
                 {station.elevation_deg.toFixed(0)}° · {range(station.range_m)}
               {:else}
-                below horizon
+                {strings.comms.belowHorizon}
               {/if}
             </span>
           </li>
@@ -99,32 +102,29 @@
     </section>
 
     <section class="panel downlink">
-      <h2>DOWNLINK</h2>
+      <h2>{strings.comms.downlink}</h2>
       {#if total <= 0}
-        <p class="quiet">No science aboard. This contract pays in money alone.</p>
+        <p class="quiet">{strings.comms.noScience}</p>
       {:else}
         <p class="headline">
-          {(telemetry.downlink.fraction * 100).toFixed(0)}<small>% delivered</small>
+          {(telemetry.downlink.fraction * 100).toFixed(0)}<small>{strings.comms.delivered}</small>
         </p>
         <div class="track">
           <div class="fill" style="width: {telemetry.downlink.fraction * 100}%"></div>
         </div>
         <dl>
           <div>
-            <dt>ON THE GROUND</dt>
+            <dt>{strings.comms.onTheGround}</dt>
             <dd>{telemetry.downlink.delivered.toFixed(2)}</dd>
           </div>
           <div>
-            <dt>STILL ABOARD</dt>
+            <dt>{strings.comms.stillAboard}</dt>
             <dd class:bad={telemetry.downlink.queued > 0}>
               {telemetry.downlink.queued.toFixed(2)}
             </dd>
           </div>
         </dl>
-        <p class="note">
-          Science counts when it lands, not when it is recorded. Every channel the diagnosis panel
-          takes is a channel not carrying it home.
-        </p>
+        <p class="note">{strings.comms.downlinkNote}</p>
       {/if}
     </section>
   </div>

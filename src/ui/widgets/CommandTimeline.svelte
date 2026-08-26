@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { strings } from '../strings.js';
   /**
    * The command timeline (concept §5.7).
    *
@@ -35,7 +36,7 @@
   <div class="axis">
     {#if secondsToEscalation > 0}
       <div class="escalation" style="left: {percent(secondsToEscalation)}%">
-        <span>ESCALATION</span>
+        <span>{strings.engineering.escalation}</span>
       </div>
     {/if}
   </div>
@@ -55,7 +56,7 @@
         <span class="lands">+{Math.round((entry.endTick - now) / TICKS_PER_SECOND)}s</span>
       </li>
     {:else}
-      <li class="empty"><span class="label">Nothing queued.</span></li>
+      <li class="empty"><span class="label">{strings.engineering.nothingQueued}</span></li>
     {/each}
   </ul>
 </div>

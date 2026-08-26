@@ -24,6 +24,7 @@
     techTree,
   } from '../../../missionConfig.js';
   import { nextStep } from '../../../economy/techTree.js';
+  import { strings } from '../../strings.js';
 
   interface Props {
     mission: Mission;
@@ -43,27 +44,25 @@
 <section class="planner">
   {#if telemetry.finances.ended}
     <p class="investor ended">
-      ■ CAMPAIGN OVER — the investor has written the company off. A second
-      bankruptcy ends it (§6.6).
+      ■ {strings.planner.campaignOver}
     </p>
   {:else if telemetry.finances.takeovers > 0}
     <p class="investor">
-      ▲ INVESTOR IN CONTROL — debt cleared, standing lost in every market.
+      ▲ {strings.planner.investorInControl}
       {#if telemetry.finances.dictatedRemaining > 0}
-        {telemetry.finances.dictatedRemaining} contract{telemetry.finances.dictatedRemaining === 1
-          ? ''
-          : 's'} still dictated.
+        {strings.planner.dictated(telemetry.finances.dictatedRemaining)}
       {/if}
       {#if telemetry.frozenBranchIds.length > 0}
-        Research frozen on {telemetry.frozenBranchIds
-          .map((id) => techTree.branches.find((b) => b.id === id)?.title)
-          .join(', ')}.
+        {strings.planner.frozen(
+          telemetry.frozenBranchIds
+            .map((id) => techTree.branches.find((b) => b.id === id)?.title ?? id)
+            .join(', '),
+        )}
       {/if}
     </p>
   {:else if telemetry.campaign.capital < 0}
     <p class="investor warning">
-      ▲ ACCOUNT IN THE RED — {telemetry.finances.weeksInDebt === 0 ? 'first week' : 'second week'}.
-      Two in a row and the investor steps in.
+      ▲ {strings.planner.inTheRed(telemetry.finances.weeksInDebt > 0)}
     </p>
   {/if}
 
@@ -91,7 +90,7 @@
       <span class="summary-line">
         {telemetry.sandbox.unlocked
           ? scenarioTable.sandbox.summary
-          : `Locked. ${scenarioTable.sandbox.unlockedBy}`}
+          : strings.planner.sandboxLocked(scenarioTable.sandbox.unlockedBy)}
       </span>
     </button>
   </nav>
@@ -113,9 +112,9 @@
 
   <section class="board">
     <header>
-      <h2>WEEK {telemetry.campaign.week} · BOARD</h2>
+      <h2>{strings.planner.board(telemetry.campaign.week)}</h2>
       <div class="books">
-        <span>CAPITAL <strong>{telemetry.campaign.capital}k</strong></span>
+        <span>{strings.planner.capital} <strong>{telemetry.campaign.capital}k</strong></span>
         {#each Object.entries(telemetry.campaign.reputation) as [market, standing] (market)}
           <span class="rep">
             {market}
@@ -135,11 +134,7 @@
         >
           <span class="market">{offer.market}</span>
           <span class="title">{offer.title}</span>
-          <span class="terms">
-            {offer.fee}k · penalty {offer.penalty}k · needs {offer.requiredQaLevel}
-            {#if offer.maxAcceptedRisk < 1}· max {(offer.maxAcceptedRisk * 100).toFixed(0)} % LOM{/if}
-            {#if offer.researchData > 0}· {offer.researchData} data{/if}
-          </span>
+          <span class="terms">{strings.planner.terms(offer)}</span>
         </button>
       {/each}
     </div>
@@ -155,8 +150,8 @@
 
   <section class="research">
     <header>
-      <h2>RESEARCH</h2>
-      <span class="data">{telemetry.tech.data} data</span>
+      <h2>{strings.planner.research}</h2>
+      <span class="data">{strings.planner.dataUnits(telemetry.tech.data)}</span>
     </header>
     <div class="branches">
       {#each techTree.branches as branch (branch.id)}
@@ -168,13 +163,13 @@
               {#if telemetry.tech.forks[branch.id]}
                 {branch.fork.options.find((o) => o.id === telemetry.tech.forks[branch.id])?.title}
               {:else}
-                level {telemetry.tech.levels[branch.id] ?? 0}
+                {strings.planner.branchLevel(telemetry.tech.levels[branch.id] ?? 0)}
               {/if}
             </span>
           </div>
 
           {#if step === null}
-            <p class="done">Branch complete.</p>
+            <p class="done">{strings.planner.branchComplete}</p>
           {:else if step.kind === 'level'}
             <button
               type="button"
@@ -182,13 +177,11 @@
                 telemetry.frozenBranchIds.includes(branch.id)}
               onclick={() => mission.research(branch.id)}
             >
-              {step.level.title} <small>{step.level.cost} data</small>
+              {step.level.title} <small>{strings.planner.dataUnits(step.level.cost)}</small>
             </button>
             <p class="summary-line">{step.level.summary}</p>
           {:else}
-            <p class="summary-line">
-              Level {branch.fork.level}: one choice, once. It cannot be taken back.
-            </p>
+            <p class="summary-line">{strings.planner.forkWarning(branch.fork.level)}</p>
             <div class="fork">
               {#each branch.fork.options as option (option.id)}
                 <button
@@ -197,7 +190,7 @@
                     telemetry.frozenBranchIds.includes(branch.id)}
                   onclick={() => mission.research(branch.id, option.id)}
                 >
-                  {option.title} <small>{branch.fork.cost} data</small>
+                  {option.title} <small>{strings.planner.dataUnits(branch.fork.cost)}</small>
                   <span class="risk">{option.risk}</span>
                 </button>
               {/each}
@@ -210,17 +203,16 @@
 
   <section class="staff">
     <header>
-      <h2>ENGINEERS</h2>
+      <h2>{strings.planner.engineers}</h2>
       <span class="wages">
-        {telemetry.staff.hired.length}/{staffTable.maxEngineers} ·
-        {#if telemetry.sandbox.active}
-          no fixed costs in the sandbox
-        {:else}
-          {telemetry.weeklySalaries + telemetry.scenario.weeklyDebt}k per week
-          {#if telemetry.scenario.weeklyDebt > 0}
-            <em>(incl. {telemetry.scenario.weeklyDebt}k debt)</em>
-          {/if}
-        {/if}
+        {telemetry.sandbox.active
+          ? strings.planner.payrollSandbox(telemetry.staff.hired.length, staffTable.maxEngineers)
+          : strings.planner.payroll(
+              telemetry.staff.hired.length,
+              staffTable.maxEngineers,
+              telemetry.weeklySalaries + telemetry.scenario.weeklyDebt,
+              telemetry.scenario.weeklyDebt,
+            )}
       </span>
     </header>
 
@@ -229,7 +221,7 @@
         {#each telemetry.staff.hired as engineer (engineer.id)}
           <button type="button" onclick={() => mission.dismissEngineer(engineer.id)}>
             {engineer.name} <small>{engineer.specialty} · {engineer.salary}k</small>
-            <span class="dismiss">dismiss</span>
+            <span class="dismiss">{strings.planner.dismiss}</span>
           </button>
         {/each}
       </div>
@@ -247,27 +239,24 @@
         </button>
       {/each}
     </div>
-    <p class="note">
-      An engineer makes their own team faster to ask, and their guesses sharper. A second one in
-      the same specialty costs the same and adds nothing.
-    </p>
+    <p class="note">{strings.planner.engineersNote}</p>
   </section>
 
   <header class="summary">
     <div class="headline">
-      <span class="label">LOSS OF MISSION</span>
+      <span class="label">{strings.planner.lossOfMission}</span>
       <span class="value">
         {percent(telemetry.risk.lossOfMission[0])} – {percent(telemetry.risk.lossOfMission[1])}
       </span>
-      <span class="spread">±{(uncertainty(telemetry.risk) * 50).toFixed(1)} points unknown</span>
+      <span class="spread">{strings.planner.unknownPoints(uncertainty(telemetry.risk) * 50)}</span>
     </div>
     <dl class="totals">
       <div>
-        <dt>COST</dt>
+        <dt>{strings.planner.cost}</dt>
         <dd>{telemetry.risk.cost}<small>k</small></dd>
       </div>
       <div>
-        <dt>REDUNDANCY MASS</dt>
+        <dt>{strings.planner.redundancyMass}</dt>
         <dd>{telemetry.risk.redundancyMass_kg.toFixed(0)}<small>kg</small></dd>
       </div>
     </dl>
@@ -283,7 +272,7 @@
         </div>
 
         <div class="dial qa">
-          <span class="label">QUALITY ASSURANCE</span>
+          <span class="label">{strings.planner.qualityAssurance}</span>
           <div class="options">
             {#each QA_LEVELS as level (level)}
               {@const locked = qaLocked(telemetry.doctrine, level)}
@@ -295,14 +284,14 @@
                 onclick={() => mission.setSlotQa(slot.slotId, level as QaLevel)}
               >
                 {qaLevels[level].title}
-                <small>{locked ? 'locked' : `×${qaLevels[level].costMultiplier}`}</small>
+                <small>{locked ? strings.planner.locked : `×${qaLevels[level].costMultiplier}`}</small>
               </button>
             {/each}
           </div>
         </div>
 
         <div class="dial units">
-          <span class="label">UNITS</span>
+          <span class="label">{strings.planner.units}</span>
           <div class="stepper">
             <button
               type="button"
@@ -319,7 +308,7 @@
         </div>
 
         <div class="contribution">
-          <span class="label">CONTRIBUTES</span>
+          <span class="label">{strings.planner.contributes}</span>
           <span class="value">
             {percent(line?.contribution[0] ?? 0)} – {percent(line?.contribution[1] ?? 0)}
           </span>
@@ -330,20 +319,16 @@
 
   <footer class="actions">
     <p class="note">
-      {#if dirty}
-        <strong>{telemetry.pendingChanges.length}</strong> slot{telemetry.pendingChanges.length === 1
-          ? ''
-          : 's'} changed. Those get new hardware; every other part stays the one it was.
-      {:else}
-        Nothing changed yet. Applying now would fly the identical vehicle.
-      {/if}
+      {dirty
+        ? strings.planner.slotsChanged(telemetry.pendingChanges.length)
+        : strings.planner.nothingChanged}
     </p>
     <div class="buttons">
       <button type="button" onclick={() => mission.closePlanner()}>
-        DISCARD <kbd>P</kbd>
+        {strings.planner.discard} <kbd>P</kbd>
       </button>
       <button type="button" class="primary" onclick={() => mission.applyPlan()}>
-        BUILD AND ROLL OUT
+        {strings.planner.build}
       </button>
     </div>
   </footer>
@@ -568,10 +553,6 @@
     opacity: 0.55;
   }
 
-  .wages em {
-    font-style: normal;
-    opacity: 0.7;
-  }
 
   .hired,
   .pool {
@@ -868,9 +849,6 @@
     opacity: 0.6;
   }
 
-  .note strong {
-    color: #ffc25c;
-  }
 
   .buttons {
     display: flex;

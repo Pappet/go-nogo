@@ -10,6 +10,7 @@
    */
   import type { Mission } from '../../mission.svelte.js';
   import { panelActionHotkey } from '../../hotkeys.js';
+  import { strings } from '../../strings.js';
   import CandidateBars from '../../widgets/CandidateBars.svelte';
   import CommandTimeline from '../../widgets/CommandTimeline.svelte';
 
@@ -47,13 +48,13 @@
 <section class="engineering">
   {#if focused === null}
     <div class="quiet">
-      <h2>NO ACTIVE ANOMALY</h2>
-      <p>All systems reporting nominal. The diagnosis panel arms itself when something does not.</p>
+      <h2>{strings.engineering.noAnomaly}</h2>
+      <p>{strings.engineering.noAnomalyBody}</p>
     </div>
   {:else}
     <header class="crisis" class:critical>
       <div class="clock">
-        <span class="label">ESCALATION IN</span>
+        <span class="label">{strings.engineering.escalationIn}</span>
         <span class="value">{Math.max(0, focused.secondsToEscalation).toFixed(1)}<small>s</small></span>
         <div class="track">
           <div
@@ -67,7 +68,7 @@
       </div>
 
       <div class="channels">
-        <span class="label">CHANNELS</span>
+        <span class="label">{strings.engineering.channels}</span>
         <div class="matrix">
           {#each Array(telemetry.channels.capacity) as _, index (index)}
             <span class="channel" class:live={index < telemetry.channels.inUse}></span>
@@ -79,7 +80,7 @@
 
     <div class="grid">
       <section class="panel">
-        <h3>REPORTED</h3>
+        <h3>{strings.engineering.reported}</h3>
         <ul class="symptoms">
           {#each focused.symptoms as symptom (symptom.title)}
             <li>
@@ -87,18 +88,18 @@
               <span>{symptom.title}</span>
             </li>
           {:else}
-            <li class="empty">Waiting for a reading…</li>
+            <li class="empty">{strings.engineering.waitingForReading}</li>
           {/each}
         </ul>
       </section>
 
       <section class="panel">
-        <h3>CANDIDATES</h3>
+        <h3>{strings.engineering.candidates}</h3>
         <CandidateBars candidates={focused.candidates} titles={focused.candidateTitles} />
       </section>
 
       <section class="panel">
-        <h3>DIAGNOSE</h3>
+        <h3>{strings.engineering.diagnose}</h3>
         <ul class="measures">
           {#each offered as measure, index (measure.id)}
             <li>
@@ -120,7 +121,7 @@
           {/each}
         </ul>
 
-        <h3 class="act">ACT WITHOUT CERTAINTY</h3>
+        <h3 class="act">{strings.engineering.actWithoutCertainty}</h3>
         <ul class="measures">
           {#each resolutions as measure (measure.id)}
             <li>
@@ -135,7 +136,7 @@
     </div>
 
     <section class="panel timeline">
-      <h3>COMMAND TIMELINE</h3>
+      <h3>{strings.engineering.commandTimeline}</h3>
       <CommandTimeline
         timeline={telemetry.timeline}
         now={mission.currentTick}

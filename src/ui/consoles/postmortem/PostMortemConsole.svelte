@@ -13,6 +13,7 @@
    * rebuilt — every other slot keeps the hardware it just flew with.
    */
   import { Mission } from '../../mission.svelte.js';
+  import { strings } from '../../strings.js';
 
   interface Props {
     mission: Mission;
@@ -24,28 +25,24 @@
 
   const percent = (fraction: number): string => `${(fraction * 100).toFixed(1)} %`;
 
-  const VERDICT_LABEL: Record<string, string> = {
-    resolved: 'RESOLVED',
-    escalated: 'ESCALATED',
-    open: 'NEVER CLOSED',
-  };
+  const VERDICT_LABEL: Record<string, string> = strings.postMortem.verdicts;
 </script>
 
 <section class="postmortem">
   {#if report === null}
-    <p class="quiet">The flight is still running.</p>
+    <p class="quiet">{strings.postMortem.stillRunning}</p>
   {:else}
     <header class="verdict" class:lost={report.lost}>
-      <h2>{report.lost ? 'VEHICLE LOST' : 'MISSION COMPLETE'}</h2>
+      <h2>{report.lost ? strings.postMortem.vehicleLost : strings.postMortem.missionComplete}</h2>
       <p>{telemetry.verdict}</p>
     </header>
 
     <div class="grid">
       <section class="panel budget">
-        <h3>RISK BUDGET AS FLOWN</h3>
+        <h3>{strings.postMortem.riskBudget}</h3>
         <p class="headline">
           {percent(telemetry.risk.lossOfMission[0])}–{percent(telemetry.risk.lossOfMission[1])}<span
-            >loss of mission</span
+            >{strings.postMortem.lossOfMission}</span
           >
         </p>
         <ul>
@@ -60,29 +57,26 @@
             </li>
           {/each}
         </ul>
-        <p class="footnote">
-          What the vehicle was priced at before it flew, worst line first. The spread is what was
-          never paid to find out.
-        </p>
+        <p class="footnote">{strings.postMortem.riskNote}</p>
       </section>
 
       <section class="panel tally">
-        <h3>THE FLIGHT IN NUMBERS</h3>
+        <h3>{strings.postMortem.inNumbers}</h3>
         <dl>
           <div>
-            <dt>ANOMALIES</dt>
+            <dt>{strings.postMortem.anomalies}</dt>
             <dd>{report.anomalies.length}</dd>
           </div>
           <div>
-            <dt>DIAGNOSES BOUGHT</dt>
+            <dt>{strings.postMortem.diagnosesBought}</dt>
             <dd>{report.diagnosesBought}</dd>
           </div>
           <div>
-            <dt>WRONG MEASURES</dt>
+            <dt>{strings.postMortem.wrongMeasures}</dt>
             <dd class:bad={report.wrongMeasures > 0}>{report.wrongMeasures}</dd>
           </div>
           <div>
-            <dt>NEVER TOUCHED</dt>
+            <dt>{strings.postMortem.neverTouched}</dt>
             <dd class:bad={report.untouched > 0}>{report.untouched}</dd>
           </div>
         </dl>
@@ -90,7 +84,7 @@
     </div>
 
     {#if report.anomalies.length === 0}
-      <p class="quiet">Nothing materialised. The budget was paid for a flight that stayed quiet.</p>
+      <p class="quiet">{strings.postMortem.nothingMaterialised}</p>
     {:else}
       <div class="anomalies">
         {#each report.anomalies as anomaly (anomaly.anomalyId)}
@@ -112,11 +106,11 @@
             {/if}
 
             <p class="window">
-              {anomaly.secondsUsed.toFixed(1)} s of a {anomaly.windowSeconds.toFixed(0)} s window
+              {strings.postMortem.window(anomaly.secondsUsed, anomaly.windowSeconds)}
             </p>
 
             {#if anomaly.diagnoses.length === 0 && anomaly.attempts.length === 0}
-              <p class="quiet">Nobody looked at it.</p>
+              <p class="quiet">{strings.postMortem.nobodyLooked}</p>
             {:else}
               <ol class="log">
                 {#each anomaly.diagnoses as diagnosis (diagnosis.measureId + diagnosis.tick)}
@@ -124,11 +118,11 @@
                     <span class="what">{diagnosis.title}</span>
                     <span class="said">
                       {#if diagnosis.confirmed !== null}
-                        confirmed {diagnosis.confirmed}
+                        {strings.postMortem.confirmed(diagnosis.confirmed)}
                       {:else if diagnosis.excluded.length > 0}
-                        ruled out {diagnosis.excluded.join(', ')}
+                        {strings.postMortem.ruledOut(diagnosis.excluded.join(', '))}
                       {:else}
-                        told you nothing new
+                        {strings.postMortem.toldNothing}
                       {/if}
                     </span>
                   </li>
@@ -138,11 +132,11 @@
                     <span class="what">{attempt.title}</span>
                     <span class="said">
                       {#if attempt.correct}
-                        fixed it
+                        {strings.postMortem.fixedIt}
                       {:else if attempt.causedChain !== null}
-                        wrong — and it set off {attempt.causedChain}
+                        {strings.postMortem.wrongAndCaused(attempt.causedChain)}
                       {:else}
-                        wrong — no effect
+                        {strings.postMortem.wrongNoEffect}
                       {/if}
                     </span>
                   </li>
@@ -156,12 +150,12 @@
 
     <footer class="retry">
       <button type="button" class="primary" onclick={() => mission.retrySameMission()}>
-        SAME SEED, SAME CONFIGURATION
-        <small>The identical run. Diagnose it properly this time.</small>
+        {strings.postMortem.retrySame}
+        <small>{strings.postMortem.retrySameNote}</small>
       </button>
       <button type="button" onclick={() => mission.retryNewConfiguration()}>
-        NEW CONFIGURATION
-        <small>The planner reopens. Only the parts you change are rebuilt.</small>
+        {strings.postMortem.retryNew}
+        <small>{strings.postMortem.retryNewNote}</small>
       </button>
     </footer>
   {/if}

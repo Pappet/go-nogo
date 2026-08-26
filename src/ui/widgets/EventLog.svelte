@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { MissionEvent } from '../../sim/countdown.js';
   import { formatMissionClock } from '../format.js';
+  import { strings } from '../strings.js';
 
   interface Props {
     events: MissionEvent[];
@@ -15,7 +16,7 @@
 </script>
 
 <section class="log" aria-label="Event log">
-  <header>EVENT LOG</header>
+  <header>{strings.eventLog.heading}</header>
   <ol>
     <!--
       Keyed by position, not by content: the log is append-only and never
@@ -29,7 +30,7 @@
         <span class="message">{event.message}</span>
       </li>
     {:else}
-      <li class="empty"><span class="message">Awaiting checklist…</span></li>
+      <li class="empty"><span class="message">{strings.eventLog.awaiting}</span></li>
     {/each}
   </ol>
 </section>

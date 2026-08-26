@@ -26,6 +26,7 @@
   } from '../hotkeys.js';
   import { setMuted, unlockAudio } from '../audio/synth.js';
   import { formatMissionClock } from '../format.js';
+  import { strings } from '../strings.js';
   import SevenSeg from '../widgets/SevenSeg.svelte';
   import EngineeringConsole from './engineering/EngineeringConsole.svelte';
   import LaunchConsole from './launch/LaunchConsole.svelte';
@@ -92,11 +93,11 @@
 
   const AVAILABLE = AVAILABLE_CONSOLES;
   const LABELS: Record<ConsoleSlot, string> = {
-    launch: 'LAUNCH',
-    flight: 'FLIGHT',
-    comms: 'COMMS',
-    engineering: 'ENGINEERING',
-    eventLog: 'EVENT LOG',
+    launch: strings.consoles.launch,
+    flight: strings.consoles.flight,
+    comms: strings.consoles.comms,
+    engineering: strings.consoles.engineering,
+    eventLog: strings.consoles.eventLog,
   };
 
   onMount(() => {
@@ -209,13 +210,13 @@
 <main class="shell">
   <header class="masthead">
     <div class="identity">
-      <h1>GO<span>/</span>NOGO</h1>
+      <h1>{strings.app.title.split('/')[0]}<span>/</span>{strings.app.title.split('/')[1]}</h1>
       <p>
         {telemetry.plannerOpen
-          ? 'PLANNER'
+          ? strings.consoles.planner
           : showReport
-            ? 'POST-MORTEM'
-            : LABELS[telemetry.console]} · GN-1 VANGUARD
+            ? strings.consoles.postMortem
+            : LABELS[telemetry.console]} · {strings.app.vehicle}
       </p>
     </div>
 
@@ -228,21 +229,22 @@
 
     <div class="status">
       <span class="phase" class:live={telemetry.phase !== 'HOLD'} class:alarm>
-        {alarm ? `${telemetry.anomalies.length} ANOMALY` : phaseLabel}
+        {alarm ? strings.controls.anomalyCount(telemetry.anomalies.length) : phaseLabel}
       </span>
       <div class="controls">
         <button type="button" onclick={() => mission.togglePause()}>
-          {telemetry.paused ? 'RESUME' : 'PAUSE'} <kbd>Space</kbd>
+          {telemetry.paused ? strings.controls.resume : strings.controls.pause}
+          <kbd>{keyLabel(bindings.togglePause)}</kbd>
         </button>
         <button type="button" onclick={() => mission.warpDown()} disabled={telemetry.warp === 1}>−</button>
         <span class="warp">{telemetry.warp}×</span>
         <button type="button" onclick={() => mission.warpUp()}>+</button>
         <button type="button" onclick={() => mission.save()} title="Save the flight where it is">
-          SAVE{#if telemetry.savedAt !== null}<span class="saved">{telemetry.savedAt}</span>{/if}
+          {strings.controls.save}{#if telemetry.savedAt !== null}<span class="saved">{telemetry.savedAt}</span>{/if}
         </button>
-        <button type="button" onclick={() => (keysOpen = !keysOpen)}>KEYS</button>
-        <button type="button" onclick={toggleMute}>{muted ? 'SOUND OFF' : 'SOUND ON'}</button>
-        <button type="button" onclick={restart}>RESTART</button>
+        <button type="button" onclick={() => (keysOpen = !keysOpen)}>{strings.controls.keys}</button>
+        <button type="button" onclick={toggleMute}>{muted ? strings.controls.soundOff : strings.controls.soundOn}</button>
+        <button type="button" onclick={restart}>{strings.controls.restart}</button>
       </div>
     </div>
   </header>
@@ -250,10 +252,10 @@
   {#if keysOpen}
     <section class="keys" aria-label="Key bindings">
       <header>
-        <h2>KEY BINDINGS</h2>
+        <h2>{strings.keyBindings.heading}</h2>
         <div>
-          <button type="button" onclick={() => saveBindings(DEFAULT_BINDINGS)}>RESET</button>
-          <button type="button" onclick={() => (keysOpen = false)}>CLOSE</button>
+          <button type="button" onclick={() => saveBindings(DEFAULT_BINDINGS)}>{strings.controls.reset}</button>
+          <button type="button" onclick={() => (keysOpen = false)}>{strings.controls.close}</button>
         </div>
       </header>
       <ul>
@@ -268,9 +270,9 @@
               onclick={() => (capturing = capturing === action ? null : action)}
             >
               {#if capturing === action}
-                press a key…
+                {strings.keyBindings.pressAKey}
               {:else if bindings[action] === ''}
-                unbound
+                {strings.keyBindings.unbound}
               {:else}
                 {keyLabel(bindings[action])}
               {/if}
@@ -278,20 +280,18 @@
           </li>
         {/each}
       </ul>
-      <p class="note">
-        1–5 stay on the consoles: the tab bar prints those numbers, and a player who rebound one
-        would have no way back to it. Q W E R T belong to the focused panel unless you take them.
-      </p>
+      <p class="note">{strings.keyBindings.note}</p>
     </section>
   {/if}
 
   {#if telemetry.resumedFromSave}
-    <p class="notice">Resumed from the last auto-save.</p>
+    <p class="notice">{strings.controls.resumedFromSave}</p>
   {/if}
 
   {#if telemetry.resultOffer !== null}
     <button type="button" class="offer" onclick={() => mission.acceptResultOffer()}>
-      RESULT READY — {telemetry.resultOffer.measureTitle}. Pause to read it? <kbd>Enter</kbd>
+      {strings.controls.resultReady(telemetry.resultOffer.measureTitle)}
+      <kbd>{keyLabel(bindings.confirm)}</kbd>
     </button>
   {/if}
 
@@ -318,8 +318,8 @@
       disabled={telemetry.phase !== 'HOLD' && !telemetry.missionOver}
       onclick={() => (telemetry.plannerOpen ? mission.closePlanner() : mission.openPlanner())}
     >
-      <span class="key">P</span>
-      PLANNER
+      <span class="key">{keyLabel(bindings.togglePlanner)}</span>
+      {strings.consoles.planner}
     </button>
     <button
       type="button"
@@ -332,7 +332,7 @@
       }}
     >
       <span class="key">·</span>
-      POST-MORTEM
+      {strings.consoles.postMortem}
     </button>
   </nav>
 
