@@ -20,6 +20,7 @@ import {
   groundStations,
   scenarioById,
   scenarios,
+  tutorialById,
   baseMeasureDuration,
   staffTable,
   techEffects,
@@ -102,6 +103,7 @@ import {
 } from '../sim/diagnosis/measures.js';
 import { ticksToEscalation } from '../sim/systems/anomaly.js';
 import { type StationView, downlinkFraction, viewAll } from '../sim/systems/comms.js';
+import { type TutorialDef, type TutorialProgress, progressIn } from './tutorial.js';
 import type { ConsoleSlot } from './hotkeys.js';
 import {
   type CountdownPhase,
@@ -225,6 +227,9 @@ export interface Telemetry {
   staff: StaffState;
   staffPool: readonly Engineer[];
   weeklySalaries: number;
+  /** The tutorial being run, and where in its script (§9). */
+  tutorial: TutorialDef | null;
+  tutorialProgress: TutorialProgress | null;
   /** The opening this campaign was started from (§9). */
   scenario: ScenarioDef;
   /** The free mode, and whether it has been earned yet (§6.7). */
@@ -308,6 +313,7 @@ export class Mission {
   private staff: StaffState = createStaffState();
   private finances: BankruptcyState = createBankruptcyState();
   private scenario: ScenarioDef = scenarios[0];
+  private tutorial: TutorialDef | null = null;
   private sandbox: SandboxState = createSandboxState();
   private savedAt: string | null = null;
   /** Set once the flown contract has been booked, so it is booked once. */
@@ -538,6 +544,39 @@ export class Mission {
     this.clearSave();
     this.reset();
     this.plannerOpen = true;
+    this.telemetry = this.snapshot();
+  }
+
+  /**
+   * Starts a tutorial, or leaves one (§9).
+   *
+   * A tutorial pins the seed, the mission key and the vehicle, because the
+   * script talks about a specific fault at a specific time and can only do
+   * that honestly if the mission is the one it was written against. The
+   * campaign's books are left alone — a lesson is not a company.
+   */
+  startTutorial(tutorialId: string | null): void {
+    this.tutorial = tutorialId === null ? null : tutorialById(tutorialId);
+    this.contract = null;
+    if (this.tutorial !== null) {
+      this.vehicleConfig = {
+        slots: defaultVehicle.slots.map((slot) => ({
+          ...slot,
+          qaLevel: this.tutorial?.qaLevel as QaLevel,
+        })),
+      };
+      this.draft = this.vehicleConfig;
+      this.config = createMissionConfig({
+        seed: this.tutorial.seed,
+        missionKey: this.tutorial.missionKey,
+        vehicle: this.vehicleConfig,
+      });
+    } else {
+      this.reconfigure();
+    }
+    this.clearSave();
+    this.reset();
+    this.plannerOpen = this.tutorial === null;
     this.telemetry = this.snapshot();
   }
 
@@ -775,6 +814,9 @@ export class Mission {
       staff: this.staff,
       staffPool: offerPool(staffTable, this.campaign, this.campaign.week),
       weeklySalaries: weeklySalaries(this.staff),
+      tutorial: this.tutorial,
+      tutorialProgress:
+        this.tutorial === null ? null : progressIn(this.tutorial, state, this.isOver(state)),
       scenario: this.scenario,
       sandbox: this.sandbox,
       savedAt: this.savedAt,
@@ -857,6 +899,13 @@ export class Mission {
    */
   private settleIfFlown(state: MissionState): void {
     if (this.settled || !this.isOver(state)) return;
+    // A tutorial is a lesson, not a company: it books nothing and unlocks
+    // nothing. Otherwise the third one — which teaches you to lose a vehicle
+    // on purpose — would charge the player for learning.
+    if (this.tutorial !== null) {
+      this.settled = true;
+      return;
+    }
 
     // §6.7's unlock, read literally: the vehicle still exists and the orbit
     // closes. A suborbital arc that came down intact is not it, and neither is
@@ -1097,6 +1146,8 @@ function emptyTelemetry(): Telemetry {
     staff: createStaffState(),
     staffPool: [],
     weeklySalaries: 0,
+    tutorial: null,
+    tutorialProgress: null,
     scenario: scenarios[0],
     sandbox: createSandboxState(),
     savedAt: null,

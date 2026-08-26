@@ -22,6 +22,7 @@
     scenarios,
     staffTable,
     techTree,
+    tutorials,
   } from '../../../missionConfig.js';
   import { nextStep } from '../../../economy/techTree.js';
   import { strings } from '../../strings.js';
@@ -65,6 +66,15 @@
       ▲ {strings.planner.inTheRed(telemetry.finances.weeksInDebt > 0)}
     </p>
   {/if}
+
+  <nav class="tutorials" aria-label="Tutorials">
+    <span class="tag">{strings.tutorial.pick}</span>
+    {#each tutorials as tutorial (tutorial.id)}
+      <button type="button" onclick={() => mission.startTutorial(tutorial.id)}>
+        {tutorial.title} <small>{tutorial.summary}</small>
+      </button>
+    {/each}
+  </nav>
 
   <nav class="scenarios" aria-label="Opening">
     {#each scenarios as scenario (scenario.id)}
@@ -339,6 +349,25 @@
     display: flex;
     flex-direction: column;
     gap: 0.8rem;
+  }
+
+  .tutorials {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+  }
+
+  .tutorials .tag {
+    font-size: 0.54rem;
+    letter-spacing: 0.24em;
+    opacity: 0.4;
+    margin-right: 0.3rem;
+  }
+
+  .tutorials button small {
+    opacity: 0.45;
+    margin-left: 0.4rem;
   }
 
   .doctrines,

@@ -216,6 +216,14 @@ export const strings = {
     retryNewNote: 'The planner reopens. Only the parts you change are rebuilt.',
   },
 
+  tutorial: {
+    heading: 'TUTORIAL',
+    step: (index: number, total: number): string => `${index} of ${total}`,
+    complete: 'Tutorial complete. Leave it to start a campaign.',
+    leave: 'LEAVE TUTORIAL',
+    pick: 'TUTORIALS',
+  },
+
   eventLog: {
     heading: 'EVENT LOG',
     awaiting: 'Awaiting checklist…',

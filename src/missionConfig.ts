@@ -20,6 +20,7 @@ import rocketData from './data/rocket.json' with { type: 'json' };
 import scenarioData from './data/scenarios.json' with { type: 'json' };
 import staffData from './data/staff.json' with { type: 'json' };
 import techTreeData from './data/techtree.json' with { type: 'json' };
+import tutorialData from './data/tutorials.json' with { type: 'json' };
 import { type ChecklistDef, type MissionConfigInput } from './sim/countdown.js';
 import { type CauseGraphData, loadCauseGraph } from './sim/diagnosis/causeGraph.js';
 import type { PriorSettings } from './sim/diagnosis/priors.js';
@@ -30,6 +31,7 @@ import type { DoctrineDef } from './economy/doctrine.js';
 import type { ContractsData } from './economy/markets.js';
 import type { StaffData } from './economy/staff.js';
 import type { ScenarioData, ScenarioDef } from './economy/scenario.js';
+import type { TutorialData, TutorialDef } from './ui/tutorial.js';
 import {
   type TechEffects,
   type TechState,
@@ -63,6 +65,15 @@ const sharedGraph = loadCauseGraph(causeGraphData);
 /** A measure's catalogue duration, before any payroll shortens it (§6.5). */
 export function baseMeasureDuration(measureId: string): number {
   return sharedGraph.measure(measureId).duration_s;
+}
+
+/** Tutorial missions (§9). */
+export const tutorials = (tutorialData as unknown as TutorialData).tutorials;
+
+export function tutorialById(tutorialId: string): TutorialDef {
+  const found = tutorials.find((entry) => entry.id === tutorialId);
+  if (found === undefined) throw new Error(`Unknown tutorial '${tutorialId}'.`);
+  return found;
 }
 
 /** Starting scenarios and the sandbox (§9, §6.7). */

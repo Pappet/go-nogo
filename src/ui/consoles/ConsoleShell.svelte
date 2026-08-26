@@ -249,6 +249,29 @@
     </div>
   </header>
 
+  {#if telemetry.tutorial !== null}
+    <aside class="tutorial" class:done={telemetry.tutorialProgress?.complete}>
+      <div class="head">
+        <span class="tag">{strings.tutorial.heading}</span>
+        <span class="which">{telemetry.tutorial.title}</span>
+        {#if telemetry.tutorialProgress !== null && !telemetry.tutorialProgress.complete}
+          <span class="step">
+            {strings.tutorial.step(
+              telemetry.tutorialProgress.index + 1,
+              telemetry.tutorialProgress.total,
+            )}
+          </span>
+        {/if}
+      </div>
+      <p>
+        {telemetry.tutorialProgress?.step?.text ?? strings.tutorial.complete}
+      </p>
+      <button type="button" onclick={() => mission.startTutorial(null)}>
+        {strings.tutorial.leave}
+      </button>
+    </aside>
+  {/if}
+
   {#if keysOpen}
     <section class="keys" aria-label="Key bindings">
       <header>
@@ -468,6 +491,62 @@
     font: inherit;
     font-size: 0.85em;
     opacity: 0.45;
+  }
+
+  .tutorial {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-areas: 'head button' 'text button';
+    align-items: center;
+    gap: 0.2rem 1rem;
+    border: 1px solid rgba(109, 252, 174, 0.4);
+    background: rgba(109, 252, 174, 0.05);
+    border-radius: 3px;
+    padding: 0.6rem 0.9rem;
+  }
+
+  .tutorial.done {
+    border-color: rgba(255, 255, 255, 0.16);
+    background: rgba(255, 255, 255, 0.02);
+  }
+
+  .tutorial .head {
+    grid-area: head;
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+  }
+
+  .tutorial .tag {
+    font-size: 0.54rem;
+    letter-spacing: 0.24em;
+    opacity: 0.5;
+  }
+
+  .tutorial .which {
+    font-size: 0.68rem;
+    letter-spacing: 0.1em;
+    color: #6dfcae;
+  }
+
+  .tutorial .step {
+    font-size: 0.56rem;
+    opacity: 0.45;
+  }
+
+  .tutorial p {
+    grid-area: text;
+    margin: 0;
+    font-size: 0.7rem;
+    line-height: 1.55;
+    opacity: 0.85;
+  }
+
+  .tutorial button {
+    grid-area: button;
+    font-size: 0.6rem;
+    letter-spacing: 0.14em;
+    padding: 0.45rem 0.7rem;
   }
 
   .keys {
