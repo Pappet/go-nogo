@@ -17,6 +17,7 @@ import priorData from './data/priors.json' with { type: 'json' };
 import riskData from './data/riskBudget.json' with { type: 'json' };
 import vehicleData from './data/vehicle.json' with { type: 'json' };
 import rocketData from './data/rocket.json' with { type: 'json' };
+import scenarioData from './data/scenarios.json' with { type: 'json' };
 import staffData from './data/staff.json' with { type: 'json' };
 import techTreeData from './data/techtree.json' with { type: 'json' };
 import { type ChecklistDef, type MissionConfigInput } from './sim/countdown.js';
@@ -28,6 +29,7 @@ import { type PhaseExposure, causeProbabilities } from './economy/riskBudget.js'
 import type { DoctrineDef } from './economy/doctrine.js';
 import type { ContractsData } from './economy/markets.js';
 import type { StaffData } from './economy/staff.js';
+import type { ScenarioData, ScenarioDef } from './economy/scenario.js';
 import {
   type TechEffects,
   type TechState,
@@ -61,6 +63,16 @@ const sharedGraph = loadCauseGraph(causeGraphData);
 /** A measure's catalogue duration, before any payroll shortens it (§6.5). */
 export function baseMeasureDuration(measureId: string): number {
   return sharedGraph.measure(measureId).duration_s;
+}
+
+/** Starting scenarios and the sandbox (§9, §6.7). */
+export const scenarioTable = scenarioData as unknown as ScenarioData;
+export const scenarios = scenarioTable.scenarios;
+
+export function scenarioById(scenarioId: string): ScenarioDef {
+  const found = scenarios.find((entry) => entry.id === scenarioId);
+  if (found === undefined) throw new Error(`Unknown scenario '${scenarioId}'.`);
+  return found;
 }
 
 /** Ground stations and the link budget (§7 ③). */

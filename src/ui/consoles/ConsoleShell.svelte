@@ -181,6 +181,9 @@
         <button type="button" onclick={() => mission.warpDown()} disabled={telemetry.warp === 1}>−</button>
         <span class="warp">{telemetry.warp}×</span>
         <button type="button" onclick={() => mission.warpUp()}>+</button>
+        <button type="button" onclick={() => mission.save()} title="Save the flight where it is">
+          SAVE{#if telemetry.savedAt !== null}<span class="saved">{telemetry.savedAt}</span>{/if}
+        </button>
         <button type="button" onclick={toggleMute}>{muted ? 'SOUND OFF' : 'SOUND ON'}</button>
         <button type="button" onclick={restart}>RESTART</button>
       </div>
@@ -330,6 +333,12 @@
     display: flex;
     align-items: center;
     gap: 0.35rem;
+  }
+
+  .saved {
+    color: #6dfcae;
+    opacity: 0.7;
+    margin-left: 0.35rem;
   }
 
   .warp {

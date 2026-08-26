@@ -15,7 +15,14 @@
   import { QA_LEVELS, type QaLevel } from '../../../sim/parts/partInstance.js';
   import { uncertainty } from '../../../economy/riskBudget.js';
   import { qaLocked } from '../../../economy/doctrine.js';
-  import { doctrines, qaLevels, staffTable, techTree } from '../../../missionConfig.js';
+  import {
+    doctrines,
+    qaLevels,
+    scenarioTable,
+    scenarios,
+    staffTable,
+    techTree,
+  } from '../../../missionConfig.js';
   import { nextStep } from '../../../economy/techTree.js';
 
   interface Props {
@@ -59,6 +66,35 @@
       Two in a row and the investor steps in.
     </p>
   {/if}
+
+  <nav class="scenarios" aria-label="Opening">
+    {#each scenarios as scenario (scenario.id)}
+      <button
+        type="button"
+        class="scenario"
+        class:active={telemetry.scenario.id === scenario.id && !telemetry.sandbox.active}
+        onclick={() => mission.chooseScenario(scenario.id)}
+      >
+        <span class="name">{scenario.title}</span>
+        <span class="summary-line">{scenario.opening}</span>
+      </button>
+    {/each}
+    <button
+      type="button"
+      class="scenario sandbox"
+      class:active={telemetry.sandbox.active}
+      disabled={!telemetry.sandbox.unlocked}
+      title={telemetry.sandbox.unlocked ? '' : scenarioTable.sandbox.unlockedBy}
+      onclick={() => mission.toggleSandbox()}
+    >
+      <span class="name">{scenarioTable.sandbox.title}</span>
+      <span class="summary-line">
+        {telemetry.sandbox.unlocked
+          ? scenarioTable.sandbox.summary
+          : `Locked. ${scenarioTable.sandbox.unlockedBy}`}
+      </span>
+    </button>
+  </nav>
 
   <nav class="doctrines" aria-label="Doctrine">
     {#each doctrines as doctrine (doctrine.id)}
@@ -176,7 +212,15 @@
     <header>
       <h2>ENGINEERS</h2>
       <span class="wages">
-        {telemetry.staff.hired.length}/{staffTable.maxEngineers} · {telemetry.weeklySalaries}k per week
+        {telemetry.staff.hired.length}/{staffTable.maxEngineers} ·
+        {#if telemetry.sandbox.active}
+          no fixed costs in the sandbox
+        {:else}
+          {telemetry.weeklySalaries + telemetry.scenario.weeklyDebt}k per week
+          {#if telemetry.scenario.weeklyDebt > 0}
+            <em>(incl. {telemetry.scenario.weeklyDebt}k debt)</em>
+          {/if}
+        {/if}
       </span>
     </header>
 
@@ -312,10 +356,41 @@
     gap: 0.8rem;
   }
 
-  .doctrines {
+  .doctrines,
+  .scenarios {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
     gap: 0.5rem;
+  }
+
+  .scenario {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.2rem;
+    text-align: left;
+    padding: 0.5rem 0.75rem;
+  }
+
+  .scenario .name {
+    font-size: 0.66rem;
+    letter-spacing: 0.14em;
+    color: #e8fff2;
+  }
+
+  .scenario .summary-line {
+    font-size: 0.58rem;
+    opacity: 0.5;
+    line-height: 1.4;
+  }
+
+  .scenario.active {
+    border-color: rgba(255, 194, 92, 0.6);
+    background: rgba(255, 194, 92, 0.05);
+  }
+
+  .scenario.active .name {
+    color: #ffc25c;
   }
 
   .doctrine {
@@ -491,6 +566,11 @@
   .wages {
     font-size: 0.62rem;
     opacity: 0.55;
+  }
+
+  .wages em {
+    font-style: normal;
+    opacity: 0.7;
   }
 
   .hired,
