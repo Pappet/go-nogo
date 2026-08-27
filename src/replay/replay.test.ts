@@ -30,7 +30,12 @@ import {
   sliceRun,
 } from './run.js';
 
-const config = createMissionConfig();
+/**
+ * The fixture flies a mission chosen for what it puts the engine through, not
+ * for being the default: three root causes, both chain types and a lost
+ * vehicle. A quiet flight would still verify the hashes and prove far less.
+ */
+const config = createMissionConfig({ missionKey: 'mission-6' });
 
 /**
  * Seed 42 and a fixed command log, exactly as CLAUDE.md specifies.
@@ -108,9 +113,20 @@ describe('replay fixture (seed 42)', () => {
     const result = playRun(fixture, config, RUN_LENGTH_TICKS);
     expect(result.state.flight.ignited).toBe(true);
     expect(result.state.missionLost).toBe(true);
-    // Lost at T+122 s, which is before staging would have happened — the
-    // cascade ends the flight rather than the flight ending the cascade.
-    expect(result.state.flight.separated).toBe(false);
+
+    // Three separate root causes, and both chain types among what they set
+    // off. That is the point of choosing this mission: a fixture that only
+    // exercised one escalation path would verify a third of the machinery.
+    const roots = result.state.diagnosis.anomalies.anomalies.filter(
+      (anomaly) => anomaly.spawnedBy === null,
+    );
+    expect(roots.length).toBeGreaterThanOrEqual(3);
+    const chains = new Set(
+      result.state.diagnosis.anomalies.anomalies
+        .filter((anomaly) => anomaly.spawnedBy !== null)
+        .map((anomaly) => anomaly.causeId),
+    );
+    expect(chains.size).toBeGreaterThanOrEqual(2);
     expect(
       result.state.events.filter((event) => event.type === 'ANOMALY_CHAIN').length,
     ).toBeGreaterThan(0);

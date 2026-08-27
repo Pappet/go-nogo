@@ -1,8 +1,8 @@
 # GO/NOGO – Project Rules for Claude Code
 
 Mission control game (web, TypeScript). Full specification: `docs/CONCEPT_v4.md` (design freeze).
-**Current assignment: Phase 1 ("The Diagnosis") – nothing beyond it.**
-Phase 0 is delivered and merged; it is the foundation everything below builds on.
+**Current assignment: Phase 2 ("The Game Emerges") – nothing beyond it.**
+Phases 0 and 1 are delivered and merged; they are the foundation everything below builds on.
 If this file and the concept contradict each other, the concept wins – report the contradiction instead of deciding silently.
 
 ## Language (hard)
@@ -15,29 +15,36 @@ If this file and the concept contradict each other, the concept wins – report 
 - Documentation, README, test names and test descriptions.
 - Commit messages, branch names, PR titles and bodies (Conventional Commits, English description).
 
-The game ships English-only for now; there is no i18n layer in Phase 0 (see the concept §9, Phase 2). Chat with the project owner is German – that is the only exception, and it never reaches the repository.
+The game ships English-only for now. Phase 2 externalises the strings so a later i18n layer is cheap (§9) – externalising is in scope, translating is not. Chat with the project owner is German – that is the only exception, and it never reaches the repository.
 
 ## Scope Fence (hard)
 
-Phase 1 covers ONLY (concept §9):
-- Cause graph v1 as data: 4 causes, 6 symptoms, 8 measures, 2 side-effect chains (`src/data/causes.json`) – **the linter runs in CI** (§8.4)
-- Anomaly runtime: seeded symptom instances with varying `strength`/`delay_s`, context priors v1 (§5.2)
-- Resource model (§5.2): a measure occupies resources for its duration; conflict-free measures run **in parallel**
-- Pause model Standard (§5.7): auto-pause once per *new* anomaly, soft RESULT READY offer, unlimited queuing, command timeline preview
-- ENGINEERING console: diagnosis panel with candidate bars, measures with costs, act-without-certainty row, escalation clock, channel matrix (4 channels)
-- Risk budget (static), post-mortem with the cause chain, two retry buttons (§5.4)
-- Hotkey scheme §7.7 – **mandatory from this phase**, including `1`–`5` for console switching
+Phase 2 covers ONLY (concept §9):
+- Parts with serial numbers, QA levels and redundancy (§4, §4.1, §4.2) – reliability drawn as `hash64(seed, serialNo, …)`, so the same part is the same part in every what-if
+- **Configurator** with QA levels and redundancy; **risk budget live** (§5.4) – the Phase 1 static budget goes away
+- 3 doctrines (§6.1), 3 markets with reputation and **minimum guarantee** (§6.2), weekly board
+- Tech tree levels 1–3 (propulsion + avionics) including the first exclusive fork (§6.4)
+- COMMS console, research data (§6.3), **staff minimal** (§6.5), **bankruptcy soft fail** (§6.6)
+- **Mid-mission save prominent** (the auto-save runs anyway, §8.2)
+- 2 starting scenarios; **sandbox unlock** after the first orbit (§6.7)
+- **Tutorial missions** – scripted 1:1 crises on the seed/replay infrastructure
+- **i18n preparation:** strings external, seven-segment widgets with a text fallback for non-ASCII
+- Hotkey rebinding (§7.7: "rebinding from Phase 2"); every new UI function ships with a hotkey
 
 Do NOT build – not even "prepare" (no scaffolding, no empty modules, no interfaces kept in stock):
-- Economy, contracts, markets, doctrines, tech tree, staff hiring
-- Configurator with QA levels and redundancy (Phase 2 – the Phase 1 risk budget is *static*)
-- COMMS console beyond the channel matrix, policy editor, fleet ops, light delay (Phase 3a/3b)
-- Real-time mode (§5.7 – Phase 3a); Phase 1 ships Standard only
-- Leaderboard/server, daily challenge, modding, i18n, tutorial missions
+- Policy editor, light delay, real-time mode, fleet ops (Phase 3a/3b)
+- Leaderboard/server, daily and weekly challenge (§6.8 – the backend is Phase 3b)
+- Ghost replays, post-mortem export as image/text, achievements (Phase 4)
+- Steam Workshop / Tauri port (Phase 4). The `/mods` folder and its schema validation (§8.5) stay out until someone asks – the data architecture already permits it, which is not the same as shipping it.
+- Actual translations. Phase 2 externalises strings; it does not add a second language.
 
 If a task appears to need any of these → stop and ask.
 
-**Phase 0 stays honest.** The countdown, the physics, the engine, the replay harness and the LAUNCH console are delivered. Changing them is allowed where Phase 1 genuinely needs it – but a moved replay hash is a breaking change: regenerate the fixture deliberately and justify it in the commit.
+**Phases 0 and 1 stay honest.** The countdown, the physics, the engine, the replay harness, the cause graph, the anomaly runtime and the LAUNCH/ENGINEERING/POST-MORTEM consoles are delivered. Changing them is allowed where Phase 2 genuinely needs it – the configurator in particular *will* reach into the risk budget and the retry paths – but a moved replay hash is a breaking change: regenerate the fixture deliberately and justify it in the commit.
+
+**Two things Phase 1 deliberately left for this phase:**
+1. The second retry button (§5.4) currently rolls a whole new mission key because there was no configuration to change. With the configurator it must become what §5.4 asks for: the planner reopens and **only changed parts re-roll**.
+2. The risk budget is a static number in `src/data/riskBudget.json`. It becomes a computation over the actual configuration.
 
 ## Determinism (non-negotiable, concept §8.2)
 
@@ -52,7 +59,7 @@ Inside `src/sim/**` this holds absolutely:
 6. **State hash never via `JSON.stringify`:** canonical binary encoding (fixed schema order, `DataView.setFloat64` little-endian), hash the bytes (SHA-256). `NaN`/`Infinity` forbidden via debug assert.
 7. Auto-pause is a sim state at a tick, not a UI timer.
 
-## Architecture (concept §8.3, Phase 0 + 1 subset)
+## Architecture (concept §8.3, Phase 0 + 1 + 2 subset)
 
 Delivered in Phase 0:
 
@@ -67,18 +74,37 @@ src/
 └── main.ts
 ```
 
-Phase 1 adds (concept §8.3):
+Phase 1 added (concept §8.3):
 
 ```
 src/
-├── sim/diagnosis/   causeGraph.ts, priors.ts, measures.ts
+├── sim/diagnosis/   causeGraph.ts, priors.ts, measures.ts, postMortem.ts
 ├── sim/systems/     anomaly.ts
-├── data/            causes.json
+├── sim/             pauseModel.ts
+├── data/            causes.json, anomalies.json, priors.json
 └── ui/consoles/     engineering/, postmortem/
 ```
 
-All tuning numbers (masses, Isp, thrust, pitch nodes, max-Q limits, measure durations,
-escalation windows, resource capacities) live in `src/data/*.json` – never hard-coded.
+Phase 2 adds (concept §8.3):
+
+```
+src/
+├── sim/parts/       partInstance.ts, qa.ts, redundancy.ts
+├── economy/         riskBudget.ts, markets.ts, reputation.ts, staff.ts, techTree.ts, campaign.ts
+├── data/            parts.json, doctrines.json, contracts.json, techtree.json, scenarios.json
+├── ui/consoles/     configurator/, comms/
+├── ui/strings.ts    every user-facing string, externalised (i18n preparation)
+└── save/            campaign persistence
+```
+
+`src/economy/` is not `src/sim/`: it is the between-missions layer, it holds no ticks, and the
+determinism rules that bind `src/sim/**` do not apply to it. What *does* bind it: every draw that
+decides a mission outcome — a part's reliability above all — is `hash64(seed, serialNo, context)`,
+because §5.4's surgical re-roll and the post-mortem's what-if both stand or fall on it.
+
+All tuning numbers (masses, Isp, thrust, pitch nodes, max-Q limits, measure durations, escalation
+windows, resource capacities, part costs, QA multipliers, contract fees, reputation deltas) live
+in `src/data/*.json` – never hard-coded.
 
 ## Stack
 
@@ -87,6 +113,9 @@ Vite · TypeScript strict (no `any`) · Svelte · Canvas 2D (orbit map) + SVG (g
 ## Tests & CI (mandatory – build them first, then features against them)
 
 - `npm test` green before every commit; CI runs it on every push.
+- **`npm run check` (svelte-check) belongs in the same breath as `npm run typecheck`.** `tsc --noEmit`
+  does not read Svelte templates, and neither does `vite build`: a console calling a method that no
+  longer exists compiles cleanly and fails in the browser. Both run in CI; run both locally too.
 - **Replay fixture test:** seed 42 + a fixed command log → SHA-256 of the final state == the checked-in reference. If the hash breaks on purpose (physics change): update the reference deliberately and justify it in the commit.
 - **Save/resume test:** save at T+90 s, resume, keep running → final state hash identical to the run without a save.
 - **Double playback test:** play the same replay twice → identical hash series (every 600 ticks).
@@ -98,9 +127,20 @@ Vite · TypeScript strict (no `any`) · Svelte · Canvas 2D (orbit map) + SVG (g
 - Small, thematic commits (Conventional Commits, English description).
 - No additional dependencies without asking.
 
-## Definition of Done – Phase 1 (concept §9)
+## Definition of Done – Phase 2 (concept §9)
 
-1. An anomaly appears, is diagnosable under resource scarcity, and a wrong measure has a consequence the post-mortem can show.
-2. CI green: the Phase 0 replay, save/resume and double playback tests still pass, plus the graph linter.
-3. **Replay test:** 3 testers play the same mission 5×; we measure from which run on they guess correctly without diagnosing. **Done when run 5 still surprises** – otherwise densify the graph before Phase 2. The A/B comparison "unlimited queuing vs. one action per pause" runs alongside.
-4. Criterion 3 is a human measurement, not yours: it needs testers on a real screen.
+1. **Two campaigns with different doctrines feel different after 3 hours – not merely repainted.**
+2. The configurator makes the risk budget live: changing a QA level or adding redundancy moves the
+   loss-of-mission number, and the mass it costs shows up in the Δv.
+3. §5.4's second retry path is surgical: reopening the planner and changing one part re-rolls
+   *that part only*. Everything else about the mission stays identical, and a test proves it.
+4. CI green: the Phase 0 replay, save/resume and double playback tests still pass, plus the graph
+   linter.
+5. Criterion 1 is a human measurement, not yours: it needs a player and three hours. What you can
+   do is make the two campaigns *mechanically* divergent and say where you measured it.
+
+### Phase 1 – delivered
+An anomaly appears, is diagnosable under resource scarcity, and a wrong measure has a consequence
+the post-mortem shows. Its criterion 3 – 3 testers × 5 runs, "done when run 5 still surprises",
+alongside the A/B on unlimited queuing – is still an open human measurement, and it stays open
+until someone runs it. Do not quietly treat it as passed.

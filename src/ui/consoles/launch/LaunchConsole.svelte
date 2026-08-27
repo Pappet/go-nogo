@@ -11,9 +11,10 @@
     Mission,
     checklistItems,
     maxDynamicPressureLimit_Pa,
-    risk,
     targetOrbit,
   } from '../../mission.svelte.js';
+  import { uncertainty } from '../../../economy/riskBudget.js';
+  import { strings } from '../../strings.js';
   import { panelActionHotkey } from '../../hotkeys.js';
   import {
     formatAltitude,
@@ -46,23 +47,23 @@
   const orbitLine = $derived.by(() => {
     if (telemetry.altitude_m <= 0) return '—';
     const orbit = telemetry.orbit;
-    if (orbit === null || !hasOrbit) return 'SUBORBITAL';
+    if (orbit === null || !hasOrbit) return strings.launch.suborbital;
     return `${Math.round(orbit.periapsisAltitude_m / 1000)} × ${Math.round(orbit.apoapsisAltitude_m / 1000)} km`;
   });
 
   const launchButtonLabel = $derived.by(() => {
     if (telemetry.phase === 'HOLD') {
-      return telemetry.readyToArm ? 'ARM AND LAUNCH' : 'ALL STATIONS MUST REPORT GO';
+      return telemetry.readyToArm ? strings.launch.armAndLaunch : strings.launch.allStationsGo;
     }
-    if (telemetry.phase === 'ARMED') return 'TERMINAL COUNT RUNNING';
-    return 'FLIGHT IN PROGRESS';
+    if (telemetry.phase === 'ARMED') return strings.launch.terminalCount;
+    return strings.launch.flightInProgress;
   });
 </script>
 
 <div class="launch">
   <div class="grid">
     <section class="panel checklist">
-      <h2>PRELAUNCH CHECKLIST</h2>
+      <h2>{strings.launch.checklist}</h2>
       <div class="switches">
         {#each checklistItems as item, index (item.id)}
           <ToggleSwitch
@@ -89,24 +90,34 @@
       {#if telemetry.phase === 'HOLD' || telemetry.phase === 'ARMED'}
         <div class="risk">
           <h3>
-            RISK BUDGET
-            <span class="total">{(risk.lossOfMission * 100).toFixed(1)} % LOM</span>
+            {strings.launch.riskBudget}
+            <span class="total">
+              {(telemetry.risk.lossOfMission[0] * 100).toFixed(1)}–{(
+                telemetry.risk.lossOfMission[1] * 100
+              ).toFixed(1)} % LOM
+            </span>
           </h3>
           <ul>
-            {#each risk.lines as line (line.label)}
+            {#each telemetry.risk.lines as line (line.slotId)}
               <li>
-                <span>{line.label}</span>
-                <span class="value">{(line.contribution * 100).toFixed(1)} %</span>
+                <span>
+                  {line.label}{#if line.units > 1}<em> ×{line.units}</em>{/if}
+                </span>
+                <span class="value">
+                  {(line.contribution[0] * 100).toFixed(1)}–{(line.contribution[1] * 100).toFixed(
+                    1,
+                  )} %
+                </span>
               </li>
             {/each}
           </ul>
-          <p>Static this phase — the same number every flight, and the post-mortem quotes it back.</p>
+          <p>{strings.launch.riskSpread(uncertainty(telemetry.risk) * 50)}</p>
         </div>
       {/if}
     </section>
 
     <section class="panel telemetry">
-      <h2>TELEMETRY</h2>
+      <h2>{strings.launch.telemetry}</h2>
       <div class="gauges">
         <Gauge
           label="ALTITUDE"
@@ -127,31 +138,31 @@
 
       <dl class="readouts">
         <div>
-          <dt>VELOCITY</dt>
+          <dt>{strings.launch.velocity}</dt>
           <dd>{formatSpeed(telemetry.speed_ms)} <span>m/s</span></dd>
         </div>
         <div>
-          <dt>ACCELERATION</dt>
+          <dt>{strings.launch.acceleration}</dt>
           <dd>{formatG(telemetry.sensedG)} <span>g</span></dd>
         </div>
         <div>
-          <dt>STAGE</dt>
-          <dd>{telemetry.stageIndex + 1} <span>{telemetry.thrusting ? 'BURN' : 'COAST'}</span></dd>
+          <dt>{strings.launch.stage}</dt>
+          <dd>{telemetry.stageIndex + 1} <span>{telemetry.thrusting ? strings.launch.burn : strings.launch.coast}</span></dd>
         </div>
         <div>
-          <dt>ORBIT</dt>
+          <dt>{strings.launch.orbit}</dt>
           <dd class="orbit">{orbitLine}</dd>
         </div>
       </dl>
 
       <div class="propellant">
-        <span class="tag">PROPELLANT</span>
+        <span class="tag">{strings.launch.propellant}</span>
         <div class="bar"><div class="level" style="width: {telemetry.propellantFraction * 100}%"></div></div>
       </div>
     </section>
 
     <section class="panel map">
-      <h2>ORBIT MAP</h2>
+      <h2>{strings.launch.orbitMap}</h2>
       <div class="canvas-frame">
         <OrbitMap
           position={telemetry.position}
@@ -217,6 +228,12 @@
     display: flex;
     flex-direction: column;
     gap: 0.22rem;
+  }
+
+  .risk li em {
+    font-style: normal;
+    color: #6dfcae;
+    opacity: 0.8;
   }
 
   .risk li {

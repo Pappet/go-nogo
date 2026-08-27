@@ -1,0 +1,99 @@
+{
+  "description": "Tech tree, propulsion and avionics (concept §6.4). Levels 1 and 2 are linear; level 3 is one exclusive choice per branch, once per campaign. The forks are not better and worse — each moves risk somewhere else, and where it lands is the decision. Costs are in research data (§6.3).",
+  "branches": [
+    {
+      "id": "branch_propulsion",
+      "title": "Propulsion",
+      "levels": [
+        {
+          "level": 1,
+          "title": "Regenerative cooling",
+          "cost": 3,
+          "summary": "Chamber runs hotter for longer.",
+          "effects": { "ispMultiplier": 1.02 }
+        },
+        {
+          "level": 2,
+          "title": "Turbopump revision B",
+          "cost": 6,
+          "summary": "Fewer moving parts on the feed side.",
+          "effects": { "reliabilityShift": { "prop": [0.03, 0.02] } }
+        }
+      ],
+      "fork": {
+        "level": 3,
+        "cost": 12,
+        "options": [
+          {
+            "id": "tech_cryogenic",
+            "title": "Cryogenic upper stage",
+            "summary": "More performance, and a stage that has to stay cold.",
+            "risk": "Propulsion misbehaves more often; the orbit is easier to reach.",
+            "effects": {
+              "ispMultiplier": 1.09,
+              "reliabilityShift": { "prop": [-0.06, -0.02] },
+              "unlocksQa": ["qualification"]
+            }
+          },
+          {
+            "id": "tech_hypergolic",
+            "title": "Hypergolic upper stage",
+            "summary": "Storable, ignites on contact, and never quite efficient.",
+            "risk": "Propulsion is quiet; the Δv margin is thin.",
+            "effects": {
+              "ispMultiplier": 0.96,
+              "reliabilityShift": { "prop": [0.07, 0.02] },
+              "unlocksQa": ["qualification"]
+            }
+          }
+        ]
+      }
+    },
+    {
+      "id": "branch_avionics",
+      "title": "Avionics",
+      "levels": [
+        {
+          "level": 1,
+          "title": "Redundant sensor bus",
+          "cost": 3,
+          "summary": "The bus stops being a single wire.",
+          "effects": { "reliabilityShift": { "avionics": [0.03, 0.01] } }
+        },
+        {
+          "level": 2,
+          "title": "Rate-limited actuators",
+          "cost": 6,
+          "summary": "Steering stops arguing with itself.",
+          "effects": { "costBySystem": { "avionics": 0.9 } }
+        }
+      ],
+      "fork": {
+        "level": 3,
+        "cost": 12,
+        "options": [
+          {
+            "id": "tech_flight_computer",
+            "title": "Onboard flight computer",
+            "summary": "The vehicle decides for itself.",
+            "risk": "Avionics carry the mission; a link outage costs nothing.",
+            "effects": {
+              "exposureBySystem": { "avionics": 1.35, "comms": 0.4 },
+              "costBySystem": { "avionics": 1.2 }
+            }
+          },
+          {
+            "id": "tech_ground_guidance",
+            "title": "Ground guidance",
+            "summary": "The hard thinking happens where you can fix it.",
+            "risk": "Cheap and light on board; the mission now rides on the downlink.",
+            "effects": {
+              "exposureBySystem": { "avionics": 0.6, "comms": 1.8 },
+              "costBySystem": { "avionics": 0.7 }
+            }
+          }
+        ]
+      }
+    }
+  ]
+}

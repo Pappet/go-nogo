@@ -49,6 +49,13 @@ export interface CauseDef {
   readonly symptoms: readonly string[];
   /** Escalation window in sim seconds. */
   readonly escalation_s?: number;
+  /**
+   * Probability this anomaly ends the mission when it is not correctly
+   * diagnosed. Not 1: escalation spawns a chain, and the chain gives a second,
+   * shorter window to abort. The risk budget (§5.4) weights by this, which is
+   * what lets a mission be eventful without being usually fatal (§5.6).
+   */
+  readonly lethality?: number;
   readonly context_priors?: readonly string[];
   /** Cause that takes over when this one runs past its window (§5.3). */
   readonly escalates_to?: string;
@@ -125,6 +132,11 @@ export class CauseGraph {
     const measure = this.data.measures[measureId];
     if (measure === undefined) throw new Error(`Unknown measure '${measureId}'`);
     return measure;
+  }
+
+  /** How much of a loss-of-mission this cause is worth (§5.4). */
+  lethality(causeId: string): number {
+    return this.cause(causeId).lethality ?? 1;
   }
 
   symptom(symptomId: string): SymptomDef {
@@ -340,7 +352,30 @@ export function validateCauseGraph(data: CauseGraphData): void {
   }
 }
 
-export function loadCauseGraph(data: CauseGraphData): CauseGraph {
+/**
+ * Loads the graph, optionally with measure durations replaced.
+ *
+ * The overrides are how an engineer on the payroll makes their own team faster
+ * to ask (§6.5). They are applied to the data rather than layered on top of
+ * the graph, so everything downstream — the scheduler, the makespan, the cost
+ * printed on the button — sees one duration and cannot disagree about it.
+ */
+export function loadCauseGraph(
+  data: CauseGraphData,
+  durationOverrides: Readonly<Record<string, number>> = {},
+): CauseGraph {
   validateCauseGraph(data);
-  return new CauseGraph(data);
+  if (Object.keys(durationOverrides).length === 0) return new CauseGraph(data);
+
+  return new CauseGraph({
+    ...data,
+    measures: Object.fromEntries(
+      Object.entries(data.measures).map(([measureId, measure]) => [
+        measureId,
+        durationOverrides[measureId] === undefined
+          ? measure
+          : { ...measure, duration_s: durationOverrides[measureId] },
+      ]),
+    ),
+  });
 }

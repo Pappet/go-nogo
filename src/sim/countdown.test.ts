@@ -9,7 +9,22 @@
 import { describe, expect, it } from 'vitest';
 
 import checklistData from '../data/checklist.json' with { type: 'json' };
-import { createMissionConfig } from '../missionConfig.js';
+import {
+  createMissionConfig,
+  defaultVehicle,
+  occurrenceFor,
+  qaLevels,
+  rocket,
+  techEffects,
+  techTree,
+} from '../missionConfig.js';
+import {
+  type TechState,
+  createTechState,
+  researchLevel,
+  takeFork,
+} from '../economy/techTree.js';
+import { type VehicleConfig, buildVehicle } from '../economy/vehicle.js';
 
 import {
   COUNTDOWN_PHASES,
@@ -286,16 +301,197 @@ describe('a mission is pinned by its seed and its key', () => {
       (anomaly) => `${anomaly.causeId}@${anomaly.onsetTick}`,
     );
 
+  // A mission that actually has a crisis to replay. Since the hardware decides
+  // occurrence, a good few mission keys fly quietly — which is the point of the
+  // configurator, and useless for asserting that a crisis reproduces.
+  const EVENTFUL = 'mission-6';
+
   it('replays the same crisis for the same seed and key', () => {
-    const first = flyBriefly({ seed: 42, missionKey: 'mission-1' });
-    const second = flyBriefly({ seed: 42, missionKey: 'mission-1' });
+    const first = flyBriefly({ seed: 42, missionKey: EVENTFUL });
+    const second = flyBriefly({ seed: 42, missionKey: EVENTFUL });
     expect(crisisOf(second)).toEqual(crisisOf(first));
     expect(crisisOf(first).length).toBeGreaterThan(0);
   });
 
   it('rolls a different crisis for a different key, and for a different seed', () => {
-    const base = crisisOf(flyBriefly({ seed: 42, missionKey: 'mission-1' }));
-    expect(crisisOf(flyBriefly({ seed: 42, missionKey: 'mission-2' }))).not.toEqual(base);
-    expect(crisisOf(flyBriefly({ seed: 43, missionKey: 'mission-1' }))).not.toEqual(base);
+    const base = crisisOf(flyBriefly({ seed: 42, missionKey: EVENTFUL }));
+    expect(crisisOf(flyBriefly({ seed: 42, missionKey: 'mission-7' }))).not.toEqual(base);
+    expect(crisisOf(flyBriefly({ seed: 43, missionKey: EVENTFUL }))).not.toEqual(base);
+  });
+});
+
+describe('a re-plan re-rolls only what it touched (§5.4)', () => {
+  /**
+   * §5.4's second retry path promises the planner reopens and *only changed
+   * parts re-roll*. Phase 1 could not keep that promise and said so; this is
+   * the test that it is kept now.
+   *
+   * Nothing special implements it. Every unit is keyed by its slot, so a slot
+   * the player did not touch builds the same hardware, its cause keeps the
+   * same probability, and the same draw against the same threshold produces
+   * the same outcome. The test exists because that is a property of the whole
+   * chain, and any link could quietly break it.
+   */
+  function flyVehicle(vehicle: VehicleConfig, missionKey: string): MissionState {
+    const missionConfig = createMissionConfig({ seed: 42, missionKey, vehicle });
+    const engine = new Engine(
+      createMissionSimulation(missionConfig),
+      createMissionState(missionConfig),
+    );
+    for (let index = 0; index < checklist.items.length; index += 1) {
+      engine.submit('toggleChecklist', { index });
+    }
+    engine.submit('arm', null);
+    engine.runTicks(6000);
+    return engine.state;
+  }
+
+  const crisisOf = (state: MissionState): string[] =>
+    state.diagnosis.anomalies.anomalies.map(
+      (anomaly) => `${anomaly.causeId}@${anomaly.onsetTick}`,
+    );
+
+  const KEY = 'mission-6';
+  const base = defaultVehicle;
+  /** The valve is the only part behind `cause_valve_sluggish`. */
+  const valveUpgraded: VehicleConfig = {
+    slots: base.slots.map((slot) =>
+      slot.slotId === 'slot_main_valve' ? { ...slot, qaLevel: 'qualification' as const } : slot,
+    ),
+  };
+
+  it('changes the cause it touched', () => {
+    const before = occurrenceFor(base, 42);
+    const after = occurrenceFor(valveUpgraded, 42);
+    expect(after.cause_valve_sluggish).not.toBe(before.cause_valve_sluggish);
+  });
+
+  it('leaves every other cause on exactly the same probability', () => {
+    const before = occurrenceFor(base, 42);
+    const after = occurrenceFor(valveUpgraded, 42);
+    for (const causeId of Object.keys(before)) {
+      if (causeId === 'cause_valve_sluggish') continue;
+      expect(after[causeId]).toBe(before[causeId]);
+    }
+  });
+
+  it('leaves the untouched anomalies where they were', () => {
+    // The surgical part: same onset ticks, same causes, for everything the
+    // player did not pay to change.
+    const before = crisisOf(flyVehicle(base, KEY)).filter(
+      (entry) => !entry.startsWith('cause_valve_sluggish'),
+    );
+    const after = crisisOf(flyVehicle(valveUpgraded, KEY)).filter(
+      (entry) => !entry.startsWith('cause_valve_sluggish'),
+    );
+    expect(after).toEqual(before);
+    expect(before.length).toBeGreaterThan(0);
+  });
+
+  it('keeps the exact parts in the slots it did not touch', () => {
+    const before = buildVehicle(base, qaLevels, 42);
+    const after = buildVehicle(valveUpgraded, qaLevels, 42);
+    for (const slot of before.slots) {
+      if (slot.slotId === 'slot_main_valve') continue;
+      const same = after.slots.find((entry) => entry.slotId === slot.slotId);
+      expect(same?.units.map((unit) => unit.serialNo)).toEqual(
+        slot.units.map((unit) => unit.serialNo),
+      );
+      expect(same?.units.map((unit) => unit.effectiveReliability)).toEqual(
+        slot.units.map((unit) => unit.effectiveReliability),
+      );
+    }
+  });
+
+  it('charges redundancy in mass, and the reserve pays for it', () => {
+    // §4.2: everything weighs something, everything eats Δv. The guidance
+    // still flies to the target orbit — what the extra mass costs is the
+    // propellant left when it gets there, which is the reserve the mission
+    // has for anything that goes wrong. Flown on a quiet mission, because a
+    // lost vehicle never gets far enough to show it.
+    const QUIET = 'mission-1';
+    const withUnits = (units: number): VehicleConfig => ({
+      slots: base.slots.map((slot) =>
+        slot.slotId === 'slot_power_bus' ? { ...slot, units } : slot,
+      ),
+    });
+
+    expect(createMissionConfig({ vehicle: withUnits(2) }).rocket.stages[0].dryMass_kg).toBeGreaterThan(
+      createMissionConfig({ vehicle: base }).rocket.stages[0].dryMass_kg,
+    );
+
+    const reserveOf = (vehicle: VehicleConfig): number => {
+      const missionConfig = createMissionConfig({ seed: 42, missionKey: QUIET, vehicle });
+      const engine = new Engine(
+        createMissionSimulation(missionConfig),
+        createMissionState(missionConfig),
+      );
+      for (let index = 0; index < checklist.items.length; index += 1) {
+        engine.submit('toggleChecklist', { index });
+      }
+      engine.submit('arm', null);
+      engine.runTicks(12000);
+      expect(engine.state.missionLost).toBe(false);
+      expect(engine.state.flight.cutoff).toBe(true);
+      return engine.state.flight.propellantRemaining_kg;
+    };
+
+    const single = reserveOf(base);
+    expect(reserveOf(withUnits(2))).toBeLessThan(single);
+    expect(reserveOf(withUnits(3))).toBeLessThan(reserveOf(withUnits(2)));
+  });
+});
+
+describe('research reaches the flight (§6.4)', () => {
+  /**
+   * A tech tree whose levels do not change a mission is a menu. Each fork has
+   * to show up somewhere the player can feel: in the Δv, in how often the
+   * console opens, or in what the risk budget says.
+   */
+  const researched = (branchId: string, forkId: string): TechState => {
+    const branch = techTree.branches.find((entry) => entry.id === branchId);
+    if (branch === undefined) throw new Error(branchId);
+    const tech = { ...createTechState(), data: 99 };
+    researchLevel(branch, tech);
+    researchLevel(branch, tech);
+    takeFork(branch, tech, forkId);
+    return tech;
+  };
+
+  it('buys Δv with the cryogenic fork and spends it on anomalies', () => {
+    const cryo = researched('branch_propulsion', 'tech_cryogenic');
+    const hyper = researched('branch_propulsion', 'tech_hypergolic');
+
+    // The Δv shows up as Isp, which is what the ascent actually integrates.
+    expect(createMissionConfig({ tech: cryo }).rocket.stages[0].ispVacuum_s).toBeGreaterThan(
+      createMissionConfig({ tech: hyper }).rocket.stages[0].ispVacuum_s,
+    );
+    // And it is paid for in propulsion anomalies.
+    expect(occurrenceFor(defaultVehicle, 42, techEffects(cryo)).cause_valve_sluggish).toBeGreaterThan(
+      occurrenceFor(defaultVehicle, 42, techEffects(hyper)).cause_valve_sluggish,
+    );
+  });
+
+  it('moves risk between avionics and comms rather than out of the vehicle', () => {
+    const onboard = techEffects(researched('branch_avionics', 'tech_flight_computer'));
+    const ground = techEffects(researched('branch_avionics', 'tech_ground_guidance'));
+
+    const sensorOnboard = occurrenceFor(defaultVehicle, 42, onboard).cause_sensor_defective;
+    const sensorGround = occurrenceFor(defaultVehicle, 42, ground).cause_sensor_defective;
+    expect(sensorOnboard).toBeGreaterThan(sensorGround);
+
+    // The bus short is the one the transmitter also feeds, so ground guidance
+    // — which leans on the downlink — has to make it worse, not better.
+    expect(occurrenceFor(defaultVehicle, 42, ground).cause_bus_short).toBeGreaterThan(
+      occurrenceFor(defaultVehicle, 42, onboard).cause_bus_short,
+    );
+  });
+
+  it('leaves an unresearched campaign exactly where it was', () => {
+    const untouched = createMissionConfig();
+    expect(untouched.rocket.stages[0].ispVacuum_s).toBe(rocket.stages[0].ispVacuum_s);
+    expect(occurrenceFor(defaultVehicle, 42)).toEqual(
+      occurrenceFor(defaultVehicle, 42, techEffects(createTechState())),
+    );
   });
 });

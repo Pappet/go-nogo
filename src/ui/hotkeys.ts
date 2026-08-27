@@ -8,6 +8,7 @@
  *   Space    pause / resume
  *   + / -    time warp
  *   Q W E    measures in the diagnosis panel, in a frozen order
+ *   P        open / close the planner
  *   D        focus the diagnosis menu
  *   L        focus the event log
  *   Enter    GO in the poll / confirm measure
@@ -18,9 +19,104 @@
  * number keys to console switching. Giving it the same idiom keeps one mental
  * model instead of inventing a second scheme for the same gesture.
  *
+ * `P` for the planner is an addition, not a change: §7.7 fixes the in-flight
+ * keys and the planner is a pre-flight screen, so it needed one of its own
+ * rather than a number that would have displaced a console.
+ *
  * Resolution stays a pure function of the key, so the binding is testable and
  * the consoles keep no keyboard logic of their own.
  */
+
+/**
+ * Actions a key can be bound to (§7.7, rebinding from Phase 2).
+ *
+ * Console switching is deliberately not in here. §7.7 fixes `1`–`5` to the
+ * numbered consoles, and a player who rebinds `3` to something else has no way
+ * back to a console the tab bar labels `3`. The keys that *are* rebindable are
+ * the verbs.
+ */
+export const BINDABLE_ACTIONS = [
+  'togglePause',
+  'warpUp',
+  'warpDown',
+  'focusDiagnosis',
+  'focusEventLog',
+  'togglePlanner',
+  'confirm',
+] as const;
+export type BindableAction = (typeof BINDABLE_ACTIONS)[number];
+
+export type Bindings = Readonly<Record<BindableAction, string>>;
+
+/** The scheme §7.7 specifies. Rebinding starts from here and can return to it. */
+export const DEFAULT_BINDINGS: Bindings = {
+  togglePause: ' ',
+  warpUp: '+',
+  warpDown: '-',
+  focusDiagnosis: 'd',
+  focusEventLog: 'l',
+  togglePlanner: 'p',
+  confirm: 'enter',
+};
+
+/** Human-readable labels, so a rebinding screen is not a list of identifiers. */
+export const ACTION_LABELS: Readonly<Record<BindableAction, string>> = {
+  togglePause: 'Pause / resume',
+  warpUp: 'Time warp up',
+  warpDown: 'Time warp down',
+  focusDiagnosis: 'Focus diagnosis',
+  focusEventLog: 'Focus event log',
+  togglePlanner: 'Open / close planner',
+  confirm: 'GO in the poll / confirm measure',
+};
+
+/** How a key reads on a button. Space and Enter have no printable glyph. */
+export function keyLabel(key: string): string {
+  if (key === ' ') return 'Space';
+  if (key === 'enter') return 'Enter';
+  return key.length === 1 ? key.toUpperCase() : key;
+}
+
+/**
+ * Normalises a KeyboardEvent key into the form bindings are stored in.
+ *
+ * Case is folded because a player holding shift is still pressing that key,
+ * and `Spacebar` is normalised because older engines report it that way.
+ */
+export function normaliseKey(key: string): string {
+  const lower = key.toLowerCase();
+  if (lower === 'spacebar') return ' ';
+  if (lower === '=') return '+';
+  return lower;
+}
+
+/** Keys that cannot be taken: §7.7 fixes the console numbers. */
+export function isReserved(key: string): boolean {
+  return key >= '1' && key <= '5';
+}
+
+/**
+ * Applies one rebinding, moving any action that already held the key.
+ *
+ * Two actions on one key is the failure mode a rebinding screen has to make
+ * impossible rather than merely discourage — so the previous holder is unset
+ * and the screen shows it as unbound, which the player can see and fix.
+ */
+export function rebind(
+  bindings: Bindings,
+  action: BindableAction,
+  key: string,
+): Bindings {
+  const normalised = normaliseKey(key);
+  if (isReserved(normalised)) return bindings;
+
+  const next: Record<BindableAction, string> = { ...bindings };
+  for (const other of BINDABLE_ACTIONS) {
+    if (other !== action && next[other] === normalised) next[other] = '';
+  }
+  next[action] = normalised;
+  return next;
+}
 
 /** Console slots in the order §7 numbers them. Not all exist yet. */
 export const CONSOLE_SLOTS = ['launch', 'flight', 'comms', 'engineering', 'eventLog'] as const;
@@ -33,6 +129,7 @@ export type HotkeyAction =
   | { kind: 'switchConsole'; slot: ConsoleSlot; index: number }
   | { kind: 'panelAction'; index: number }
   | { kind: 'focusDiagnosis' }
+  | { kind: 'togglePlanner' }
   | { kind: 'focusEventLog' }
   | { kind: 'confirm' }
   | { kind: 'togglePause' }
@@ -45,34 +142,27 @@ export type HotkeyAction =
  * A slot with no console behind it still resolves: the caller decides what is
  * available, so this table does not have to know which phase the game is in.
  */
-export function resolveHotkey(key: string): HotkeyAction | null {
+export function resolveHotkey(
+  key: string,
+  bindings: Bindings = DEFAULT_BINDINGS,
+): HotkeyAction | null {
   if (key >= '1' && key <= '5') {
     const index = Number(key) - 1;
     return { kind: 'switchConsole', slot: CONSOLE_SLOTS[index], index };
   }
 
-  const lower = key.toLowerCase();
+  const lower = normaliseKey(key);
+
+  // Bindings win over the panel keys: a player who put pause on `Q` meant it,
+  // and silently keeping the old meaning would be the worse surprise.
+  for (const action of BINDABLE_ACTIONS) {
+    if (bindings[action] !== '' && bindings[action] === lower) return { kind: action };
+  }
+
   const panelIndex = PANEL_ACTION_KEYS.indexOf(lower as (typeof PANEL_ACTION_KEYS)[number]);
   if (panelIndex >= 0) return { kind: 'panelAction', index: panelIndex };
 
-  switch (lower) {
-    case ' ':
-    case 'spacebar':
-      return { kind: 'togglePause' };
-    case 'd':
-      return { kind: 'focusDiagnosis' };
-    case 'l':
-      return { kind: 'focusEventLog' };
-    case 'enter':
-      return { kind: 'confirm' };
-    case '+':
-    case '=':
-      return { kind: 'warpUp' };
-    case '-':
-      return { kind: 'warpDown' };
-    default:
-      return null;
-  }
+  return null;
 }
 
 /**

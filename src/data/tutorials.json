@@ -1,0 +1,90 @@
+{
+  "description": "Tutorial missions (concept §9). Scripted 1:1 crises on the seed/replay infrastructure: a tutorial names a seed, a mission key and a vehicle, and the machinery that makes a replay reproducible makes the lesson reproducible too. The crisis is not staged — it is a real draw that happens to be the same one every time, which is why the tutorial can talk about it in advance without lying.",
+  "tutorials": [
+    {
+      "id": "tutorial_the_count",
+      "title": "The Count",
+      "summary": "Get a vehicle off the pad.",
+      "seed": 42,
+      "missionKey": "tutorial-2",
+      "qaLevel": "series",
+      "steps": [
+        {
+          "id": "step_checklist",
+          "text": "Six switches, one poll. Throw them with Q W E R T, or click. Nothing launches until every station reads GO.",
+          "until": { "kind": "checklistComplete" }
+        },
+        {
+          "id": "step_arm",
+          "text": "All stations GO. Press Enter to arm. The terminal count runs itself from there — the switches freeze the moment it starts.",
+          "until": { "kind": "phase", "phase": "LIFTOFF" }
+        },
+        {
+          "id": "step_warp",
+          "text": "Airborne. Ascent takes ten minutes of sim time; + and - change the warp, Space pauses. The physics do not care which you pick.",
+          "until": { "kind": "phase", "phase": "MECO" }
+        },
+        {
+          "id": "step_orbit",
+          "text": "Main engine cut-off. Watch the orbit close on the map. This flight was a quiet one — most are not.",
+          "until": { "kind": "missionOver" }
+        }
+      ]
+    },
+    {
+      "id": "tutorial_one_reading",
+      "title": "One Reading",
+      "summary": "A single anomaly, and the cost of knowing.",
+      "seed": 42,
+      "missionKey": "tutorial-1",
+      "qaLevel": "series",
+      "steps": [
+        {
+          "id": "step_launch",
+          "text": "Same drill: switches, arm, launch. Something will go wrong at about T+35. Let it.",
+          "until": { "kind": "anomalyVisible" }
+        },
+        {
+          "id": "step_read",
+          "text": "The game paused itself. One reading is in, and two causes explain it — the candidate bars are the priors, not the answer. The clock at the top is how long you have.",
+          "until": { "kind": "diagnosisBought" }
+        },
+        {
+          "id": "step_wait",
+          "text": "Buy a diagnosis with Q or W. Each one costs seconds and channels. Waiting for the next reading is free and slower: that trade is the whole game.",
+          "until": { "kind": "anomalyResolved" }
+        },
+        {
+          "id": "step_fixed",
+          "text": "Resolved. The post-mortem will show what you paid and what it told you.",
+          "until": { "kind": "missionOver" }
+        }
+      ]
+    },
+    {
+      "id": "tutorial_wrong_move",
+      "title": "The Wrong Move",
+      "summary": "What a confident guess costs.",
+      "seed": 42,
+      "missionKey": "tutorial-1",
+      "qaLevel": "series",
+      "steps": [
+        {
+          "id": "step_launch",
+          "text": "The same flight, and the same fault at T+35 — the seed guarantees it. This time do not diagnose.",
+          "until": { "kind": "anomalyVisible" }
+        },
+        {
+          "id": "step_guess",
+          "text": "Act without certainty: raise the tank pressure. It is a reasonable guess against a pressure drop, and it is the wrong one here.",
+          "until": { "kind": "chainSpawned" }
+        },
+        {
+          "id": "step_chain",
+          "text": "Raising pressure on a leak made the leak worse. A second crisis, a shorter window, and this one only takes an abort. Wrong measures are not merely wasted time.",
+          "until": { "kind": "missionOver" }
+        }
+      ]
+    }
+  ]
+}

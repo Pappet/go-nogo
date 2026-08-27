@@ -1,0 +1,90 @@
+{
+  "description": "Contract templates for the weekly board (concept §6.2). Each market has its own character: government pays well and demands testing, commercial pays on time and fines lateness, science pays little in money and much in data and standing. A template is not a contract — the board draws fees and deadlines from these bands per week.",
+  "markets": {
+    "government": {
+      "title": "Government",
+      "character": "Safe, slow, and it wants to see the certificates.",
+      "reputationOnSuccess": 8,
+      "reputationOnFailure": -14,
+      "crossMarketPenalty": -2
+    },
+    "commercial": {
+      "title": "Commercial",
+      "character": "Fast, high volume, and the penalty clause is real.",
+      "reputationOnSuccess": 6,
+      "reputationOnFailure": -10,
+      "crossMarketPenalty": -2
+    },
+    "science": {
+      "title": "Science",
+      "character": "Odd orbits, little money, and everyone reads the paper.",
+      "reputationOnSuccess": 10,
+      "reputationOnFailure": -8,
+      "crossMarketPenalty": -1
+    }
+  },
+  "templates": [
+    {
+      "id": "contract_gov_survey",
+      "market": "government",
+      "title": "Polar survey payload",
+      "feeBand": [900, 1300],
+      "minimumReputation": -50,
+      "requiredQaLevel": "acceptance",
+      "maxAcceptedRisk": 0.12,
+      "researchData": 1
+    },
+    {
+      "id": "contract_gov_certification",
+      "market": "government",
+      "title": "Launcher certification flight",
+      "feeBand": [1500, 2100],
+      "minimumReputation": 20,
+      "requiredQaLevel": "qualification",
+      "maxAcceptedRisk": 0.07,
+      "researchData": 2
+    },
+    {
+      "id": "contract_com_smallsat",
+      "market": "commercial",
+      "title": "Smallsat rideshare",
+      "feeBand": [600, 900],
+      "minimumReputation": -50,
+      "requiredQaLevel": "series",
+      "maxAcceptedRisk": 1,
+      "researchData": 0
+    },
+    {
+      "id": "contract_com_constellation",
+      "market": "commercial",
+      "title": "Constellation batch",
+      "feeBand": [1100, 1600],
+      "minimumReputation": 25,
+      "requiredQaLevel": "series",
+      "maxAcceptedRisk": 0.2,
+      "researchData": 1
+    },
+    {
+      "id": "contract_sci_probe",
+      "market": "science",
+      "title": "Upper-atmosphere probe",
+      "feeBand": [400, 650],
+      "minimumReputation": -50,
+      "requiredQaLevel": "series",
+      "maxAcceptedRisk": 1,
+      "researchData": 3
+    },
+    {
+      "id": "contract_sci_observatory",
+      "market": "science",
+      "title": "Observatory deployment",
+      "feeBand": [800, 1200],
+      "minimumReputation": 30,
+      "requiredQaLevel": "acceptance",
+      "maxAcceptedRisk": 0.1,
+      "researchData": 5
+    }
+  ],
+  "penaltyFraction": 0.4,
+  "boardSize": 5
+}

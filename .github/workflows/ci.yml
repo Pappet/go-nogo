@@ -21,6 +21,11 @@ jobs:
 
       - run: npm run typecheck
 
+      # `tsc --noEmit` does not read Svelte templates, and neither does the
+      # build: a console calling a method that no longer exists compiles
+      # cleanly and fails at runtime. This is the step that reads them.
+      - run: npm run check
+
       - run: npm test
 
       - run: npm run build

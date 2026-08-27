@@ -8,7 +8,83 @@
  * commands, and the console reads a snapshot taken after the ticks have run.
  */
 import { dismissOffer } from '../sim/pauseModel.js';
-import { createMissionConfig, checklist, rocket, pitchProgram, riskBudget } from '../missionConfig.js';
+import {
+  createMissionConfig,
+  checklist,
+  defaultVehicle,
+  effectiveExposure,
+  effectivePartDef,
+  pitchProgram,
+  contracts,
+  doctrineById,
+  groundStations,
+  scenarioById,
+  scenarios,
+  tutorialById,
+  baseMeasureDuration,
+  staffTable,
+  techEffects,
+  techTree,
+  doctrines,
+  partLethality,
+  qaLevels,
+  rocket,
+} from '../missionConfig.js';
+import { type DoctrineDef, nearestAllowedQa, qaLocked } from '../economy/doctrine.js';
+import {
+  type CampaignState,
+  createCampaign,
+  nextMissionKey,
+} from '../economy/campaign.js';
+import {
+  type Contract,
+  generateBoard,
+  meetsRequirements,
+  settleContract,
+} from '../economy/markets.js';
+import {
+  type TechState,
+  createTechState,
+  nextStep,
+  researchLevel,
+  takeFork,
+} from '../economy/techTree.js';
+import {
+  type Engineer,
+  type StaffState,
+  createStaffState,
+  dismiss,
+  hire,
+  measureDurationOverrides,
+  offerPool,
+  weeklySalaries,
+} from '../economy/staff.js';
+import {
+  type SandboxState,
+  type ScenarioDef,
+  applyScenario,
+  createSandboxState,
+  enterSandbox,
+  leaveSandbox,
+  noteOrbitReached,
+  startingVehicle,
+  weeklyFixedCosts,
+} from '../economy/scenario.js';
+import {
+  type BankruptcyState,
+  createBankruptcyState,
+  isFrozen,
+  recordContractFlown,
+  reviewFinances,
+} from '../economy/bankruptcy.js';
+import { QA_LEVELS } from '../sim/parts/partInstance.js';
+import {
+  type RiskBudget,
+  computeRiskBudget,
+  headlineRisk,
+} from '../economy/riskBudget.js';
+import { type SlotChoice, type VehicleConfig, buildVehicle, changedSlots } from '../economy/vehicle.js';
+import type { QaLevel } from '../sim/parts/partInstance.js';
 import {
   type MissionReport,
   buildMissionReport,
@@ -26,6 +102,8 @@ import {
   projectSchedule,
 } from '../sim/diagnosis/measures.js';
 import { ticksToEscalation } from '../sim/systems/anomaly.js';
+import { type StationView, downlinkFraction, viewAll } from '../sim/systems/comms.js';
+import { type TutorialDef, type TutorialProgress, progressIn } from './tutorial.js';
 import type { ConsoleSlot } from './hotkeys.js';
 import {
   type CountdownPhase,
@@ -41,6 +119,7 @@ import { type Command, Engine, MAX_NUMERIC_WARP, TICKS_PER_SECOND } from '../sim
 import {
   currentSensedG,
   isThrusting,
+  missionTime_s,
   positionOf,
   propellantFraction,
   velocityOf,
@@ -57,6 +136,7 @@ import {
 import { GAME_VERSION, type Run, computeDataVersion } from '../replay/run.js';
 
 import { playAlert, playBeep, playIgnitionRumble, playSwitchClick, unlockAudio } from './audio/synth.js';
+import { formatMissionClock } from './format.js';
 import { TrailSampler } from './trail.js';
 
 const SAVE_KEY = 'go-nogo/run';
@@ -124,8 +204,46 @@ export interface Telemetry {
   measures: MeasureView[];
   timeline: ProjectedMeasure[];
   channels: ChannelView;
+  /** What each ground station can see right now (§7 ③). */
+  stations: readonly StationView[];
+  /** Science queued aboard, and what has reached the ground (§6.3). */
+  downlink: { queued: number; delivered: number; fraction: number };
   resultOffer: { anomalyId: string; measureTitle: string } | null;
 
+  /** The live risk budget for the vehicle as configured (§5.4). */
+  risk: RiskBudget;
+  /** The doctrine this campaign is flying under (§6.1). */
+  doctrine: DoctrineDef;
+  /** The campaign's books (§6). */
+  campaign: CampaignState;
+  /** This week's offers (§6.2), and the one that was taken. */
+  board: readonly Contract[];
+  contract: Contract | null;
+  /** Why the drafted vehicle would not be accepted, if it would not. */
+  contractShortfall: readonly string[];
+  /** What the campaign has researched, and what it could buy next (§6.4). */
+  tech: TechState;
+  /** Who is on the payroll, and who could be (§6.5). */
+  staff: StaffState;
+  staffPool: readonly Engineer[];
+  weeklySalaries: number;
+  /** The tutorial being run, and where in its script (§9). */
+  tutorial: TutorialDef | null;
+  tutorialProgress: TutorialProgress | null;
+  /** The opening this campaign was started from (§9). */
+  scenario: ScenarioDef;
+  /** The free mode, and whether it has been earned yet (§6.7). */
+  sandbox: SandboxState;
+  /** Wall-clock note of the last auto-save, for the mid-mission save (§8.2). */
+  savedAt: string | null;
+  /** Where the campaign stands with its investor (§6.6). */
+  finances: BankruptcyState;
+  frozenBranchIds: readonly string[];
+  /** The vehicle the planner is editing, and whether it is open. */
+  plannerOpen: boolean;
+  vehicle: VehicleConfig;
+  /** Slots the planner has changed but not yet applied — these will re-roll. */
+  pendingChanges: string[];
   /** True while the console is showing a flight restored from the auto-save. */
   resumedFromSave: boolean;
   /** True once the flight has an outcome to review — lost, or in orbit. */
@@ -138,7 +256,17 @@ export interface Telemetry {
 export const checklistItems = checklist.items;
 export const maxDynamicPressureLimit_Pa = rocket.maxDynamicPressure_Pa;
 export const targetOrbit = rocket.targetOrbit;
-export const risk = riskBudget;
+
+/**
+ * Consoles that exist. The rest of §7's six are drawn in the tab bar and
+ * inert.
+ *
+ * One list, read by both the shell and `switchConsole` — it was two, they
+ * drifted the moment COMMS was added, and the console silently refused to
+ * open while its tab looked enabled.
+ */
+export const AVAILABLE_CONSOLES: readonly ConsoleSlot[] = ['launch', 'comms', 'engineering'];
+
 
 export class Mission {
   telemetry = $state<Telemetry>(emptyTelemetry());
@@ -149,8 +277,47 @@ export class Mission {
    * the graph, priors and capacities all come out of here.
    */
   private config: MissionConfigInput = createMissionConfig();
+  /**
+   * Rebuilds the mission for where the campaign now stands.
+   *
+   * The key comes from the campaign, so mission 2 is a different flight from
+   * mission 1 — while the campaign seed keeps every part serial stable across
+   * all of them, which is what §5.4's re-roll and the post-mortem's what-if
+   * both need.
+   */
+  private reconfigure(): void {
+    this.config = createMissionConfig({
+      seed: this.campaign.seed,
+      missionKey: nextMissionKey(this.campaign),
+      vehicle: this.vehicleConfig,
+      tech: this.tech,
+      measureDurations: measureDurationOverrides(staffTable, this.staff, (measureId) =>
+        baseMeasureDuration(measureId),
+      ),
+      researchData: this.contract?.researchData ?? 0,
+    });
+  }
   /** Counts the missions this session has rolled, for the mission key. */
   private missionSerial = 1;
+
+  /** What the vehicle currently flying was built to. */
+  private vehicleConfig: VehicleConfig = defaultVehicle;
+  /** The planner's working copy. Applied, or thrown away, as one decision. */
+  private draft: VehicleConfig = defaultVehicle;
+  private plannerOpen = false;
+  /** Chosen once per campaign (§6.1). Defaults until a campaign picks one. */
+  private doctrine: DoctrineDef = doctrines[0];
+  private campaign: CampaignState = createCampaign(doctrines[0], 42, defaultVehicle);
+  private contract: Contract | null = null;
+  private tech: TechState = createTechState();
+  private staff: StaffState = createStaffState();
+  private finances: BankruptcyState = createBankruptcyState();
+  private scenario: ScenarioDef = scenarios[0];
+  private tutorial: TutorialDef | null = null;
+  private sandbox: SandboxState = createSandboxState();
+  private savedAt: string | null = null;
+  /** Set once the flown contract has been booked, so it is booked once. */
+  private settled = false;
 
   private engine = new Engine(createMissionSimulation(this.config), createMissionState(this.config));
   private commands: Command[] = [];
@@ -176,6 +343,7 @@ export class Mission {
       if (this.state.missionLost && !this.engine.isPaused) this.engine.pause();
       this.captureTrail();
       this.announce();
+      this.settleIfFlown(this.state);
       this.telemetry = this.snapshot();
 
       if (now - this.lastAutosaveMs >= AUTOSAVE_INTERVAL_MS) {
@@ -222,7 +390,7 @@ export class Mission {
 
   /** Only consoles that exist in this phase can be switched to. */
   switchConsole(slot: ConsoleSlot): boolean {
-    if (slot !== 'launch' && slot !== 'engineering') return false;
+    if (!AVAILABLE_CONSOLES.includes(slot)) return false;
     this.console = slot;
     this.telemetry = this.snapshot();
     return true;
@@ -272,7 +440,79 @@ export class Mission {
     this.announcedEvents = 0;
     this.console = 'launch';
     this.resumedFromSave = false;
+    this.plannerOpen = false;
+    this.settled = false;
     this.telemetry = this.snapshot();
+  }
+
+  // ---------- The planner (§5.4) ----------
+
+  /**
+   * Opens the planner on a copy of what is currently built.
+   *
+   * Only on the pad: the vehicle decides which anomalies the mission has, so
+   * editing it in flight would rewrite a crisis the player is already inside.
+   */
+  openPlanner(): void {
+    if (this.state.phase !== 'HOLD' && !this.telemetry.missionOver) return;
+    this.draft = this.vehicleConfig;
+    this.plannerOpen = true;
+    this.telemetry = this.snapshot();
+  }
+
+  closePlanner(): void {
+    this.plannerOpen = false;
+    this.draft = this.vehicleConfig;
+    this.telemetry = this.snapshot();
+  }
+
+  private editSlot(slotId: string, change: Partial<SlotChoice>): void {
+    this.draft = {
+      slots: this.draft.slots.map((slot) =>
+        slot.slotId === slotId ? { ...slot, ...change } : slot,
+      ),
+    };
+    this.telemetry = this.snapshot();
+  }
+
+  setSlotQa(slotId: string, qaLevel: QaLevel): void {
+    // A locked level is not offered, so reaching one means the doctrine
+    // changed under a saved vehicle. Take the nearest it does allow rather
+    // than refusing the click with no explanation.
+    this.editSlot(slotId, {
+      qaLevel: qaLocked(this.doctrine, qaLevel)
+        ? nearestAllowedQa(this.doctrine, qaLevel, QA_LEVELS)
+        : qaLevel,
+    });
+  }
+
+  /**
+   * Switches doctrine and restarts (§6.1).
+   *
+   * Once per campaign in the finished game; here it is how the player picks
+   * one at all. Any slot on a level the new doctrine forbids moves to the
+   * nearest allowed one — refusing to load would be the wrong answer to a
+   * choice the player is allowed to make.
+   */
+  setSlotUnits(slotId: string, units: number): void {
+    this.editSlot(slotId, { units: Math.max(1, Math.min(3, units)) });
+  }
+
+  /**
+   * Flies the drafted vehicle — §5.4's second retry path, done properly.
+   *
+   * Same seed, same mission key: only the slots the player actually touched
+   * get new hardware, because every part is keyed by its slot. A cause whose
+   * parts did not change is compared against the same draw at the same
+   * threshold and therefore behaves identically. That is what makes the
+   * re-plan surgical rather than a new mission wearing the old one's name.
+   */
+  applyPlan(): void {
+    this.vehicleConfig = this.draft;
+    this.plannerOpen = false;
+    this.reconfigure();
+    this.clearSave();
+    this.reset();
   }
 
   /**
@@ -288,24 +528,128 @@ export class Mission {
   }
 
   /**
-   * Retry path 2 (§5.4): a different draw.
+   * Retry path 2 (§5.4): the planner reopens with the last configuration.
    *
-   * §5.4 calls this button "new configuration", and means it surgically: the
-   * planner reopens and only the parts the player changed re-roll. Phase 1 has
-   * no configurator (that is Phase 2), so there is nothing to change and
-   * nothing to hold fixed — this rolls a whole new mission key, and every
-   * anomaly with it. Named for what it does rather than for what §5.4 will
-   * eventually make it do.
+   * "Only changed parts re-roll" is not a special case here — it is what the
+   * serial keying already does. The player changes a valve; that slot builds
+   * new units and every other slot keeps the exact hardware it flew with.
    */
-  retryNewMission(): void {
-    this.missionSerial += 1;
-    this.config = createMissionConfig({ missionKey: `mission-${this.missionSerial}` });
+  retryNewConfiguration(): void {
+    // The campaign has moved on: the flown contract is booked, the week has
+    // turned, and the next mission is a new flight rather than the same one.
+    this.reconfigure();
+    this.contract = null;
+    this.draft = this.vehicleConfig;
+    this.plannerOpen = true;
     this.clearSave();
     this.reset();
+    this.plannerOpen = true;
+    this.telemetry = this.snapshot();
+  }
+
+  /**
+   * Starts a tutorial, or leaves one (§9).
+   *
+   * A tutorial pins the seed, the mission key and the vehicle, because the
+   * script talks about a specific fault at a specific time and can only do
+   * that honestly if the mission is the one it was written against. The
+   * campaign's books are left alone — a lesson is not a company.
+   */
+  startTutorial(tutorialId: string | null): void {
+    this.tutorial = tutorialId === null ? null : tutorialById(tutorialId);
+    this.contract = null;
+    if (this.tutorial !== null) {
+      this.vehicleConfig = {
+        slots: defaultVehicle.slots.map((slot) => ({
+          ...slot,
+          qaLevel: this.tutorial?.qaLevel as QaLevel,
+        })),
+      };
+      this.draft = this.vehicleConfig;
+      this.config = createMissionConfig({
+        seed: this.tutorial.seed,
+        missionKey: this.tutorial.missionKey,
+        vehicle: this.vehicleConfig,
+      });
+    } else {
+      this.reconfigure();
+    }
+    this.clearSave();
+    this.reset();
+    this.plannerOpen = this.tutorial === null;
+    this.telemetry = this.snapshot();
+  }
+
+  /** Starts a campaign on a scenario (§9). Like the doctrine, once per run. */
+  chooseScenario(scenarioId: string): void {
+    this.scenario = scenarioById(scenarioId);
+    this.startCampaign();
+  }
+
+  /** Enters or leaves the free mode (§6.7). */
+  toggleSandbox(): void {
+    if (this.sandbox.active) leaveSandbox(this.sandbox);
+    else if (!enterSandbox(this.sandbox)) return;
+    this.contract = null;
+    this.reconfigure();
+    this.clearSave();
+    this.reset();
+    this.plannerOpen = true;
+    this.telemetry = this.snapshot();
+  }
+
+  chooseDoctrine(doctrineId: string): void {
+    this.doctrine = doctrineById(doctrineId);
+    this.startCampaign();
+  }
+
+  /**
+   * Restarts the campaign on the current doctrine and scenario.
+   *
+   * Doctrine first, then scenario: the doctrine decides what kind of company
+   * this is, the scenario decides what it is standing in — so "Inherited
+   * Hardware" dents a Science company's already negative commercial standing
+   * rather than replacing it.
+   */
+  private startCampaign(): void {
+    const legal = (vehicle: VehicleConfig): VehicleConfig => ({
+      slots: vehicle.slots.map((slot) => ({
+        ...slot,
+        qaLevel: nearestAllowedQa(this.doctrine, slot.qaLevel, QA_LEVELS),
+      })),
+    });
+
+    this.vehicleConfig = legal(startingVehicle(this.scenario, defaultVehicle));
+    this.draft = this.vehicleConfig;
+    this.campaign = createCampaign(this.doctrine, this.campaign.seed, this.vehicleConfig);
+    applyScenario(this.campaign, this.scenario);
+
+    this.contract = null;
+    // A doctrine is chosen once per campaign, so switching starts a new one —
+    // including its research, which was bought under the old one's prices, its
+    // payroll and its standing with the investor.
+    this.tech = createTechState();
+    this.staff = createStaffState();
+    this.finances = createBankruptcyState();
+    this.sandbox = createSandboxState();
+
+    this.reconfigure();
+    this.clearSave();
+    this.reset();
+    this.plannerOpen = true;
+    this.telemetry = this.snapshot();
   }
 
   // ---------- Save and resume: a run truncated at a tick (§8.2 rule 9) ----------
 
+  /**
+   * Writes the save and notes when.
+   *
+   * §9 asks for the mid-mission save to be *prominent*, and the auto-save was
+   * already running silently — which is the worst of both, because a player
+   * who cannot see it happen does not trust it and quits at a milestone
+   * instead of when they want to.
+   */
   save(): void {
     if (typeof localStorage === 'undefined') return;
     const run: Run = {
@@ -318,6 +662,8 @@ export class Mission {
     };
     try {
       localStorage.setItem(SAVE_KEY, JSON.stringify({ run, tick: this.engine.tick }));
+      this.savedAt = formatMissionClock(this.telemetry.clock_s);
+      this.telemetry = this.snapshot();
     } catch {
       // A full or blocked storage must never take the launch down with it.
     }
@@ -414,7 +760,7 @@ export class Mission {
           state.diagnosis.anomalies,
           state.diagnosis.results,
           state.missionLost,
-          riskBudget.lossOfMission,
+          headlineRisk(this.riskBudget(this.vehicleConfig)),
           TICKS_PER_SECOND,
         )
       : null;
@@ -444,6 +790,12 @@ export class Mission {
       measures: this.measureViews(state, tick),
       timeline: this.projectQueued(state, tick),
       channels: this.channelView(state),
+      stations: viewAll(groundStations, position, missionTime_s(state.flight)),
+      downlink: {
+        queued: state.comms.queued,
+        delivered: state.comms.downlinked,
+        fraction: downlinkFraction(state.comms),
+      },
       resultOffer:
         state.diagnosis.pause.offer === null
           ? null
@@ -452,11 +804,158 @@ export class Mission {
               measureTitle: this.config.causeGraph.measure(state.diagnosis.pause.offer.measureId).title,
             },
 
+      risk: this.riskBudget(this.plannerOpen ? this.draft : this.vehicleConfig),
+      doctrine: this.doctrine,
+      campaign: this.campaign,
+      board: generateBoard(contracts, this.campaign, this.campaign.week),
+      contract: this.contract,
+      contractShortfall: this.shortfall(this.plannerOpen ? this.draft : this.vehicleConfig),
+      tech: this.tech,
+      staff: this.staff,
+      staffPool: offerPool(staffTable, this.campaign, this.campaign.week),
+      weeklySalaries: weeklySalaries(this.staff),
+      tutorial: this.tutorial,
+      tutorialProgress:
+        this.tutorial === null ? null : progressIn(this.tutorial, state, this.isOver(state)),
+      scenario: this.scenario,
+      sandbox: this.sandbox,
+      savedAt: this.savedAt,
+      finances: this.finances,
+      frozenBranchIds: techTree.branches
+        .filter((branch) => isFrozen(this.finances, branch.id))
+        .map((branch) => branch.id),
+      plannerOpen: this.plannerOpen,
+      vehicle: this.plannerOpen ? this.draft : this.vehicleConfig,
+      pendingChanges: changedSlots(this.vehicleConfig, this.draft),
       resumedFromSave: this.resumedFromSave,
       missionOver: over,
       report,
       verdict: report === null ? '' : verdictLine(report),
     };
+  }
+
+  /** What the accepted contract would refuse about this vehicle (§6.2). */
+  private shortfall(vehicle: VehicleConfig): string[] {
+    if (this.contract === null) return [];
+    return [
+      ...meetsRequirements(
+        this.contract,
+        vehicle.slots.map((slot) => slot.qaLevel),
+        QA_LEVELS,
+        headlineRisk(this.riskBudget(vehicle)),
+      ).reasons,
+    ];
+  }
+
+  /** Puts an engineer on the payroll (§6.5). */
+  hireEngineer(engineerId: string): void {
+    const engineer = offerPool(staffTable, this.campaign, this.campaign.week).find(
+      (entry) => entry.id === engineerId,
+    );
+    if (engineer === undefined) return;
+    if (!hire(staffTable, this.staff, engineer)) return;
+    this.reconfigure();
+    this.telemetry = this.snapshot();
+  }
+
+  dismissEngineer(engineerId: string): void {
+    dismiss(this.staff, engineerId);
+    this.reconfigure();
+    this.telemetry = this.snapshot();
+  }
+
+  /** Buys the next thing a branch offers, level or fork (§6.4). */
+  research(branchId: string, optionId?: string): void {
+    const branch = techTree.branches.find((entry) => entry.id === branchId);
+    if (branch === undefined) return;
+    // A frozen branch is the investor's condition, not a suggestion (§6.6).
+    if (isFrozen(this.finances, branchId)) return;
+    const step = nextStep(branch, this.tech);
+    if (step === null) return;
+    if (step.kind === 'level') researchLevel(branch, this.tech);
+    else if (optionId !== undefined) takeFork(branch, this.tech, optionId);
+    // Research changes the hardware, so the mission has to be rebuilt on it.
+    this.reconfigure();
+    this.telemetry = this.snapshot();
+  }
+
+  /** Takes an offer off this week's board. */
+  acceptContract(templateId: string): void {
+    const board = generateBoard(contracts, this.campaign, this.campaign.week);
+    this.contract = board.find((entry) => entry.templateId === templateId) ?? null;
+    // The mission has to know how much science it is carrying, so the link
+    // has something to fail to deliver.
+    this.reconfigure();
+    this.telemetry = this.snapshot();
+  }
+
+  /**
+   * Books the flown contract, once.
+   *
+   * A mission counts as delivered when the vehicle survived to the orbit
+   * check. Anything else is a failure the customer pays nothing for and fines
+   * on top — §6.2's penalty clause is what makes a cheap vehicle a decision
+   * rather than a free ride.
+   */
+  private settleIfFlown(state: MissionState): void {
+    if (this.settled || !this.isOver(state)) return;
+    // A tutorial is a lesson, not a company: it books nothing and unlocks
+    // nothing. Otherwise the third one — which teaches you to lose a vehicle
+    // on purpose — would charge the player for learning.
+    if (this.tutorial !== null) {
+      this.settled = true;
+      return;
+    }
+
+    // §6.7's unlock, read literally: the vehicle still exists and the orbit
+    // closes. A suborbital arc that came down intact is not it, and neither is
+    // an orbit reached by something that then broke up.
+    const orbit = readOrbit(
+      state.flight.positionX,
+      state.flight.positionY,
+      state.flight.velocityX,
+      state.flight.velocityY,
+    );
+    noteOrbitReached(
+      this.sandbox,
+      !state.missionLost && orbit !== null && orbit.periapsisAltitude_m > 0,
+    );
+
+    if (this.contract === null) {
+      this.settled = true;
+      return;
+    }
+    this.settled = true;
+    const outcome = settleContract(contracts, this.campaign, this.contract, !state.missionLost);
+    // §6.3: downlink limited by comms. Science that never reached a station
+    // never happened, whatever the instrument recorded.
+    this.tech.data += outcome.researchData * downlinkFraction(state.comms);
+    this.campaign.vehicle = this.vehicleConfig;
+
+    // The week turned inside settleContract, so the fixed costs are due and
+    // the investor gets to look at the books (§6.5, §6.6). The sandbox has
+    // neither — that one line is what makes it a mode (§6.7).
+    this.campaign.capital -= weeklyFixedCosts(
+      this.scenario,
+      weeklySalaries(this.staff),
+      this.sandbox.active,
+    );
+    recordContractFlown(this.finances);
+    if (!this.sandbox.active) {
+      reviewFinances(this.finances, this.campaign, techTree.branches, this.tech);
+    }
+  }
+
+  /** The risk budget for a configuration, priced for this mission. */
+  private riskBudget(vehicle: VehicleConfig): RiskBudget {
+    return computeRiskBudget(
+      buildVehicle(vehicle, qaLevels, this.config.seed, this.doctrine, (id) =>
+        effectivePartDef(id, techEffects(this.tech)),
+      ),
+      effectiveExposure(techEffects(this.tech)),
+      rocket.nominalMissionDuration_s,
+      partLethality,
+    );
   }
 
   /**
@@ -634,7 +1133,29 @@ function emptyTelemetry(): Telemetry {
     measures: [],
     timeline: [],
     channels: { capacity: 0, inUse: 0 },
+    stations: [],
+    downlink: { queued: 0, delivered: 0, fraction: 1 },
     resultOffer: null,
+    risk: { lossOfMission: [0, 0], lines: [], mass_kg: 0, redundancyMass_kg: 0, cost: 0 },
+    doctrine: doctrines[0],
+    campaign: createCampaign(doctrines[0], 42, { slots: [] }),
+    board: [],
+    contract: null,
+    contractShortfall: [],
+    tech: createTechState(),
+    staff: createStaffState(),
+    staffPool: [],
+    weeklySalaries: 0,
+    tutorial: null,
+    tutorialProgress: null,
+    scenario: scenarios[0],
+    sandbox: createSandboxState(),
+    savedAt: null,
+    finances: createBankruptcyState(),
+    frozenBranchIds: [],
+    plannerOpen: false,
+    vehicle: { slots: [] },
+    pendingChanges: [],
     resumedFromSave: false,
     missionOver: false,
     report: null,

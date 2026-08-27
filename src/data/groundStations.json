@@ -1,0 +1,33 @@
+{
+  "description": "Ground stations (concept §7 ③). The simulation is planar, so a station is a fixed angle on the Earth's circumference that rotates with it. Angles are in degrees from the launch meridian; the launch site is station zero, which is why it sees the ascent and then loses it like everyone else. A station may declare a localRange_m: inside it the link holds regardless of elevation, which is how range control keeps talking to a vehicle still sitting on the pad next to it. Without it the geometry is right and the answer is wrong — a vehicle at zero altitude is exactly on its own horizon.",
+  "earthRotationPeriod_s": 86164,
+  "minElevation_deg": 5,
+  "referenceRange_m": 2000000,
+  "stations": [
+    {
+      "id": "station_pad",
+      "title": "Range Control",
+      "angle_deg": 0,
+      "downlinkRate": 1.0,
+      "localRange_m": 60000
+    },
+    {
+      "id": "station_east",
+      "title": "Eastern Track",
+      "angle_deg": 48,
+      "downlinkRate": 0.8
+    },
+    {
+      "id": "station_deep",
+      "title": "Deep Space 12",
+      "angle_deg": 145,
+      "downlinkRate": 1.4
+    },
+    {
+      "id": "station_south",
+      "title": "Southern Gap",
+      "angle_deg": 262,
+      "downlinkRate": 0.6
+    }
+  ]
+}

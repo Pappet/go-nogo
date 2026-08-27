@@ -8,24 +8,70 @@
    */
   import { onMount } from 'svelte';
 
-  import { Mission } from '../mission.svelte.js';
+  import { AVAILABLE_CONSOLES, Mission } from '../mission.svelte.js';
   import {
+    ACTION_LABELS,
+    BINDABLE_ACTIONS,
+    type BindableAction,
+    type Bindings,
     CONSOLE_SLOTS,
     type ConsoleSlot,
+    DEFAULT_BINDINGS,
     consoleHotkey,
+    isReserved,
+    keyLabel,
+    normaliseKey,
+    rebind,
     resolveHotkey,
   } from '../hotkeys.js';
   import { setMuted, unlockAudio } from '../audio/synth.js';
   import { formatMissionClock } from '../format.js';
+  import { strings } from '../strings.js';
   import SevenSeg from '../widgets/SevenSeg.svelte';
   import EngineeringConsole from './engineering/EngineeringConsole.svelte';
   import LaunchConsole from './launch/LaunchConsole.svelte';
+  import CommsConsole from './comms/CommsConsole.svelte';
+  import ConfiguratorConsole from './configurator/ConfiguratorConsole.svelte';
   import PostMortemConsole from './postmortem/PostMortemConsole.svelte';
 
   const mission = new Mission();
   const telemetry = $derived(mission.telemetry);
 
   let muted = $state(false);
+
+  /**
+   * The keyboard, as this player has arranged it (§7.7, rebinding from Phase 2).
+   *
+   * Kept in localStorage rather than in the campaign: a rebinding is about the
+   * person at the keyboard, not about the company they are running, and it
+   * should survive starting a new one.
+   */
+  const BINDINGS_KEY = 'go-nogo/bindings';
+  let bindings = $state<Bindings>(loadBindings());
+  let keysOpen = $state(false);
+  /** The action waiting for a key press, while the player is rebinding one. */
+  let capturing = $state<BindableAction | null>(null);
+
+  function loadBindings(): Bindings {
+    try {
+      const raw = localStorage.getItem(BINDINGS_KEY);
+      if (raw === null) return DEFAULT_BINDINGS;
+      // Merged onto the defaults, so a scheme saved before an action existed
+      // still leaves that action bound rather than dead.
+      return { ...DEFAULT_BINDINGS, ...(JSON.parse(raw) as Partial<Bindings>) };
+    } catch {
+      return DEFAULT_BINDINGS;
+    }
+  }
+
+  function saveBindings(next: Bindings): void {
+    bindings = next;
+    try {
+      localStorage.setItem(BINDINGS_KEY, JSON.stringify(next));
+    } catch {
+      // A browser refusing storage is not a reason to refuse the rebinding.
+    }
+  }
 
   /**
    * The POST-MORTEM is console ⑥ in §7, and §7.7 only hands out keys 1–5 — so
@@ -45,14 +91,13 @@
     }
   });
 
-  /** Consoles that exist in this phase. The rest are drawn, but inert. */
-  const AVAILABLE: readonly ConsoleSlot[] = ['launch', 'engineering'];
+  const AVAILABLE = AVAILABLE_CONSOLES;
   const LABELS: Record<ConsoleSlot, string> = {
-    launch: 'LAUNCH',
-    flight: 'FLIGHT',
-    comms: 'COMMS',
-    engineering: 'ENGINEERING',
-    eventLog: 'EVENT LOG',
+    launch: strings.consoles.launch,
+    flight: strings.consoles.flight,
+    comms: strings.consoles.comms,
+    engineering: strings.consoles.engineering,
+    eventLog: strings.consoles.eventLog,
   };
 
   onMount(() => {
@@ -73,7 +118,20 @@
 
   function onKeydown(event: KeyboardEvent): void {
     if (event.metaKey || event.ctrlKey || event.altKey) return;
-    const action = resolveHotkey(event.key);
+
+    // While the rebinding panel is waiting, every key is the answer to it.
+    if (capturing !== null) {
+      event.preventDefault();
+      const key = normaliseKey(event.key);
+      if (key === 'escape') capturing = null;
+      else if (!isReserved(key)) {
+        saveBindings(rebind(bindings, capturing, key));
+        capturing = null;
+      }
+      return;
+    }
+
+    const action = resolveHotkey(event.key, bindings);
     if (action === null) return;
     event.preventDefault();
     unlockAudio();
@@ -83,9 +141,13 @@
         showReport = false;
         mission.switchConsole(action.slot);
         return;
+      case 'togglePlanner':
+        if (telemetry.plannerOpen) mission.closePlanner();
+        else mission.openPlanner();
+        return;
       case 'panelAction':
-        // Nothing on the post-mortem is commandable: the flight is over.
-        if (showReport) return;
+        // Neither the post-mortem nor the planner takes the flight's keys.
+        if (showReport || telemetry.plannerOpen) return;
         // The focused console decides what its panel actions are: checklist
         // switches in LAUNCH, diagnosis measures in ENGINEERING.
         if (telemetry.console === 'launch') {
@@ -108,7 +170,7 @@
         mission.switchConsole('launch');
         return;
       case 'confirm':
-        if (showReport) return;
+        if (showReport || telemetry.plannerOpen) return;
         if (telemetry.console === 'launch') mission.arm();
         else mission.acceptResultOffer();
         return;
@@ -148,8 +210,14 @@
 <main class="shell">
   <header class="masthead">
     <div class="identity">
-      <h1>GO<span>/</span>NOGO</h1>
-      <p>{showReport ? 'POST-MORTEM' : LABELS[telemetry.console]} · GN-1 VANGUARD</p>
+      <h1>{strings.app.title.split('/')[0]}<span>/</span>{strings.app.title.split('/')[1]}</h1>
+      <p>
+        {telemetry.plannerOpen
+          ? strings.consoles.planner
+          : showReport
+            ? strings.consoles.postMortem
+            : LABELS[telemetry.console]} · {strings.app.vehicle}
+      </p>
     </div>
 
     <div class="clock">
@@ -161,28 +229,92 @@
 
     <div class="status">
       <span class="phase" class:live={telemetry.phase !== 'HOLD'} class:alarm>
-        {alarm ? `${telemetry.anomalies.length} ANOMALY` : phaseLabel}
+        {alarm ? strings.controls.anomalyCount(telemetry.anomalies.length) : phaseLabel}
       </span>
       <div class="controls">
         <button type="button" onclick={() => mission.togglePause()}>
-          {telemetry.paused ? 'RESUME' : 'PAUSE'} <kbd>Space</kbd>
+          {telemetry.paused ? strings.controls.resume : strings.controls.pause}
+          <kbd>{keyLabel(bindings.togglePause)}</kbd>
         </button>
         <button type="button" onclick={() => mission.warpDown()} disabled={telemetry.warp === 1}>−</button>
         <span class="warp">{telemetry.warp}×</span>
         <button type="button" onclick={() => mission.warpUp()}>+</button>
-        <button type="button" onclick={toggleMute}>{muted ? 'SOUND OFF' : 'SOUND ON'}</button>
-        <button type="button" onclick={restart}>RESTART</button>
+        <button type="button" onclick={() => mission.save()} title="Save the flight where it is">
+          {strings.controls.save}{#if telemetry.savedAt !== null}<span class="saved">{telemetry.savedAt}</span>{/if}
+        </button>
+        <button type="button" onclick={() => (keysOpen = !keysOpen)}>{strings.controls.keys}</button>
+        <button type="button" onclick={toggleMute}>{muted ? strings.controls.soundOff : strings.controls.soundOn}</button>
+        <button type="button" onclick={restart}>{strings.controls.restart}</button>
       </div>
     </div>
   </header>
 
+  {#if telemetry.tutorial !== null}
+    <aside class="tutorial" class:done={telemetry.tutorialProgress?.complete}>
+      <div class="head">
+        <span class="tag">{strings.tutorial.heading}</span>
+        <span class="which">{telemetry.tutorial.title}</span>
+        {#if telemetry.tutorialProgress !== null && !telemetry.tutorialProgress.complete}
+          <span class="step">
+            {strings.tutorial.step(
+              telemetry.tutorialProgress.index + 1,
+              telemetry.tutorialProgress.total,
+            )}
+          </span>
+        {/if}
+      </div>
+      <p>
+        {telemetry.tutorialProgress?.step?.text ?? strings.tutorial.complete}
+      </p>
+      <button type="button" onclick={() => mission.startTutorial(null)}>
+        {strings.tutorial.leave}
+      </button>
+    </aside>
+  {/if}
+
+  {#if keysOpen}
+    <section class="keys" aria-label="Key bindings">
+      <header>
+        <h2>{strings.keyBindings.heading}</h2>
+        <div>
+          <button type="button" onclick={() => saveBindings(DEFAULT_BINDINGS)}>{strings.controls.reset}</button>
+          <button type="button" onclick={() => (keysOpen = false)}>{strings.controls.close}</button>
+        </div>
+      </header>
+      <ul>
+        {#each BINDABLE_ACTIONS as action (action)}
+          <li>
+            <span class="what">{ACTION_LABELS[action]}</span>
+            <button
+              type="button"
+              class="binding"
+              class:capturing={capturing === action}
+              class:unbound={bindings[action] === ''}
+              onclick={() => (capturing = capturing === action ? null : action)}
+            >
+              {#if capturing === action}
+                {strings.keyBindings.pressAKey}
+              {:else if bindings[action] === ''}
+                {strings.keyBindings.unbound}
+              {:else}
+                {keyLabel(bindings[action])}
+              {/if}
+            </button>
+          </li>
+        {/each}
+      </ul>
+      <p class="note">{strings.keyBindings.note}</p>
+    </section>
+  {/if}
+
   {#if telemetry.resumedFromSave}
-    <p class="notice">Resumed from the last auto-save.</p>
+    <p class="notice">{strings.controls.resumedFromSave}</p>
   {/if}
 
   {#if telemetry.resultOffer !== null}
     <button type="button" class="offer" onclick={() => mission.acceptResultOffer()}>
-      RESULT READY — {telemetry.resultOffer.measureTitle}. Pause to read it? <kbd>Enter</kbd>
+      {strings.controls.resultReady(telemetry.resultOffer.measureTitle)}
+      <kbd>{keyLabel(bindings.confirm)}</kbd>
     </button>
   {/if}
 
@@ -205,17 +337,34 @@
     <button
       type="button"
       class="tab"
+      class:active={telemetry.plannerOpen}
+      disabled={telemetry.phase !== 'HOLD' && !telemetry.missionOver}
+      onclick={() => (telemetry.plannerOpen ? mission.closePlanner() : mission.openPlanner())}
+    >
+      <span class="key">{keyLabel(bindings.togglePlanner)}</span>
+      {strings.consoles.planner}
+    </button>
+    <button
+      type="button"
+      class="tab"
       class:active={showReport}
       disabled={!telemetry.missionOver}
-      onclick={() => (showReport = true)}
+      onclick={() => {
+        mission.closePlanner();
+        showReport = true;
+      }}
     >
       <span class="key">·</span>
-      POST-MORTEM
+      {strings.consoles.postMortem}
     </button>
   </nav>
 
-  {#if showReport}
+  {#if telemetry.plannerOpen}
+    <ConfiguratorConsole {mission} />
+  {:else if showReport}
     <PostMortemConsole {mission} />
+  {:else if telemetry.console === 'comms'}
+    <CommsConsole {mission} />
   {:else if telemetry.console === 'engineering'}
     <EngineeringConsole {mission} />
   {:else}
@@ -304,6 +453,12 @@
     gap: 0.35rem;
   }
 
+  .saved {
+    color: #6dfcae;
+    opacity: 0.7;
+    margin-left: 0.35rem;
+  }
+
   .warp {
     font-size: 0.7rem;
     min-width: 2rem;
@@ -336,6 +491,132 @@
     font: inherit;
     font-size: 0.85em;
     opacity: 0.45;
+  }
+
+  .tutorial {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    grid-template-areas: 'head button' 'text button';
+    align-items: center;
+    gap: 0.2rem 1rem;
+    border: 1px solid rgba(109, 252, 174, 0.4);
+    background: rgba(109, 252, 174, 0.05);
+    border-radius: 3px;
+    padding: 0.6rem 0.9rem;
+  }
+
+  .tutorial.done {
+    border-color: rgba(255, 255, 255, 0.16);
+    background: rgba(255, 255, 255, 0.02);
+  }
+
+  .tutorial .head {
+    grid-area: head;
+    display: flex;
+    align-items: baseline;
+    gap: 0.6rem;
+  }
+
+  .tutorial .tag {
+    font-size: 0.54rem;
+    letter-spacing: 0.24em;
+    opacity: 0.5;
+  }
+
+  .tutorial .which {
+    font-size: 0.68rem;
+    letter-spacing: 0.1em;
+    color: #6dfcae;
+  }
+
+  .tutorial .step {
+    font-size: 0.56rem;
+    opacity: 0.45;
+  }
+
+  .tutorial p {
+    grid-area: text;
+    margin: 0;
+    font-size: 0.7rem;
+    line-height: 1.55;
+    opacity: 0.85;
+  }
+
+  .tutorial button {
+    grid-area: button;
+    font-size: 0.6rem;
+    letter-spacing: 0.14em;
+    padding: 0.45rem 0.7rem;
+  }
+
+  .keys {
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 3px;
+    padding: 0.7rem 0.9rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .keys header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .keys h2 {
+    margin: 0;
+    font-size: 0.6rem;
+    letter-spacing: 0.24em;
+    opacity: 0.5;
+  }
+
+  .keys header div {
+    display: flex;
+    gap: 0.35rem;
+  }
+
+  .keys ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 0.35rem;
+  }
+
+  .keys li {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.8rem;
+    font-size: 0.66rem;
+  }
+
+  .keys .what {
+    opacity: 0.7;
+  }
+
+  .binding {
+    min-width: 6rem;
+    text-align: center;
+  }
+
+  .binding.capturing {
+    border-color: rgba(255, 194, 92, 0.7);
+    color: #ffc25c;
+  }
+
+  .binding.unbound {
+    border-color: rgba(255, 122, 107, 0.6);
+    color: #ff7a6b;
+  }
+
+  .keys .note {
+    margin: 0;
+    font-size: 0.58rem;
+    line-height: 1.5;
+    opacity: 0.4;
   }
 
   .notice {

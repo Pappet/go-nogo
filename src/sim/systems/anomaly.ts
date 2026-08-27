@@ -86,6 +86,7 @@ export function planAnomalies(
   seed: number,
   missionKey: string,
   liftoffTick: number,
+  occurrenceByCause: Readonly<Record<string, number>> = {},
 ): Anomaly[] {
   const planned: Anomaly[] = [];
 
@@ -93,7 +94,12 @@ export function planAnomalies(
     if (graph.cause(causeId).is_chain) continue;
 
     const key = `${missionKey}/${causeId}`;
-    if (hashUnit(seed, key, 'anomalyOccurs') >= settings.occurrenceProbability) continue;
+    // The hardware decides. `occurrenceByCause` carries what the configured
+    // vehicle makes of this cause (§4, §5.4); the flat settings value is what
+    // a cause no part is responsible for falls back to, so a graph can be
+    // flown on its own in a test without inventing a vehicle for it.
+    const probability = occurrenceByCause[causeId] ?? settings.occurrenceProbability;
+    if (hashUnit(seed, key, 'anomalyOccurs') >= probability) continue;
 
     const span = settings.onsetWindow_s.latest - settings.onsetWindow_s.earliest;
     const onset_s = settings.onsetWindow_s.earliest + hashUnit(seed, key, 'anomalyOnset') * span;

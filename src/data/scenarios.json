@@ -1,0 +1,32 @@
+{
+  "description": "Starting scenarios (concept §9). Two of them, crossed with three doctrines, give the six campaign openings §6.1 asks for before the first fork. A scenario is a situation, not a difficulty: one starts you with nothing and no obligations, the other with hardware you did not choose and a debt you did not want.",
+  "scenarios": [
+    {
+      "id": "scenario_series_zero",
+      "title": "Series Zero",
+      "summary": "A hangar, a licence, and whatever the doctrine pays for.",
+      "opening": "Nobody has heard of you. Nobody is owed anything either.",
+      "capitalDelta": 0,
+      "weeklyDebt": 0,
+      "reputationDelta": { "government": 0, "commercial": 0, "science": 0 },
+      "startingQaLevel": null,
+      "startingWear": 0
+    },
+    {
+      "id": "scenario_inherited",
+      "title": "Inherited Hardware",
+      "summary": "You bought a failed competitor's stock, and their creditors.",
+      "opening": "The parts are flight-proven because someone else flew them. The debt is yours from Monday.",
+      "capitalDelta": 900,
+      "weeklyDebt": 120,
+      "reputationDelta": { "government": -5, "commercial": -10, "science": 0 },
+      "startingQaLevel": "flightProven",
+      "startingWear": 1
+    }
+  ],
+  "sandbox": {
+    "title": "Sandbox",
+    "summary": "No fixed costs, no deadlines, everything you have researched.",
+    "unlockedBy": "First stable orbit."
+  }
+}

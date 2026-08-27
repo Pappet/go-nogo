@@ -35,6 +35,8 @@ export interface RocketDef {
   readonly stageSeparationDelay_s: number;
   readonly stages: readonly StageDef[];
   readonly targetOrbit: TargetOrbit;
+  /** How long the mission is flown for — the risk budget's duration term (§5.4). */
+  readonly nominalMissionDuration_s: number;
 }
 
 /** Fraction of sea-level pressure, clamped — the interpolation weight. */
