@@ -113,6 +113,9 @@ Vite · TypeScript strict (no `any`) · Svelte · Canvas 2D (orbit map) + SVG (g
 ## Tests & CI (mandatory – build them first, then features against them)
 
 - `npm test` green before every commit; CI runs it on every push.
+- **`npm run check` (svelte-check) belongs in the same breath as `npm run typecheck`.** `tsc --noEmit`
+  does not read Svelte templates, and neither does `vite build`: a console calling a method that no
+  longer exists compiles cleanly and fails in the browser. Both run in CI; run both locally too.
 - **Replay fixture test:** seed 42 + a fixed command log → SHA-256 of the final state == the checked-in reference. If the hash breaks on purpose (physics change): update the reference deliberately and justify it in the commit.
 - **Save/resume test:** save at T+90 s, resume, keep running → final state hash identical to the run without a save.
 - **Double playback test:** play the same replay twice → identical hash series (every 600 ticks).
