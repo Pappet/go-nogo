@@ -47,9 +47,9 @@ describe('a serial number names one unit', () => {
   });
 
   it('gives different serials different units, and different campaigns different fleets', () => {
-    const a = drawReliability(42, serialFor('slot_valve', 0), valve.reliabilityBand);
-    const b = drawReliability(42, serialFor('slot_valve', 1), valve.reliabilityBand);
-    const otherSeed = drawReliability(43, serialFor('slot_valve', 0), valve.reliabilityBand);
+    const a = drawReliability(42, serialFor(valve.id, 'slot_valve', 0), valve.reliabilityBand);
+    const b = drawReliability(42, serialFor(valve.id, 'slot_valve', 1), valve.reliabilityBand);
+    const otherSeed = drawReliability(43, serialFor(valve.id, 'slot_valve', 0), valve.reliabilityBand);
     expect(a).not.toBe(b);
     expect(a).not.toBe(otherSeed);
   });
@@ -57,7 +57,7 @@ describe('a serial number names one unit', () => {
   it('stays inside what the manufacturer committed to', () => {
     for (const part of parts) {
       for (let index = 0; index < 300; index += 1) {
-        const drawn = drawReliability(42, serialFor(part.id, index), part.reliabilityBand);
+        const drawn = drawReliability(42, serialFor(part.id, 'slot', index), part.reliabilityBand);
         expect(drawn).toBeGreaterThanOrEqual(part.reliabilityBand[0]);
         expect(drawn).toBeLessThanOrEqual(part.reliabilityBand[1]);
       }
@@ -79,7 +79,7 @@ describe('QA changes what you know, and what flies', () => {
     let slot = '';
     for (let index = 0; index < 200 && slot === ''; index += 1) {
       const candidate = `slot_${index}`;
-      if (drawReliability(42, serialFor(candidate, 0), valve.reliabilityBand) < target[0]) {
+      if (drawReliability(42, serialFor(valve.id, candidate, 0), valve.reliabilityBand) < target[0]) {
         slot = candidate;
       }
     }
@@ -87,7 +87,7 @@ describe('QA changes what you know, and what flies', () => {
 
     const accepted = buildPart(valve, slot, 'acceptance', qaTable, 42);
     expect(accepted.screenedOut.length).toBeGreaterThan(0);
-    expect(accepted.serialNo).not.toBe(serialFor(slot, 0));
+    expect(accepted.serialNo).not.toBe(serialFor(valve.id, slot, 0));
     expect(accepted.effectiveReliability).toBeGreaterThanOrEqual(target[0]);
 
     // And the rejected unit is still exactly the unit it always was.
@@ -157,5 +157,31 @@ describe('the shipped catalogue', () => {
     for (const part of parts) {
       for (const causeId of part.failureCauses) expect(known).toContain(causeId);
     }
+  });
+});
+
+describe('a serial names a part, not just a socket', () => {
+  it('gives two part types in one slot different serials and independent luck', () => {
+    // Found in review: without the part id, a swapped part inherited the old
+    // one's fraction of its band and carried the same serial number — so the
+    // post-mortem's part history could not say which unit it meant, and a
+    // swap, which is a change, did not re-roll.
+    const bus = partDef('part_power_bus');
+    const asValve = buildPart(valve, 'slot_x', 'series', qaTable, 42);
+    const asBus = buildPart(bus, 'slot_x', 'series', qaTable, 42);
+
+    expect(asValve.serialNo).not.toBe(asBus.serialNo);
+
+    const fractionOf = (instance: typeof asValve, def: typeof valve): number =>
+      (instance.effectiveReliability - def.reliabilityBand[0]) /
+      (def.reliabilityBand[1] - def.reliabilityBand[0]);
+    expect(fractionOf(asValve, valve)).not.toBeCloseTo(fractionOf(asBus, bus), 6);
+  });
+
+  it('still gives the same part in the same slot the same unit', () => {
+    // The property §5.4 rests on, unchanged by the fix.
+    expect(buildPart(valve, 'slot_x', 'series', qaTable, 42).serialNo).toBe(
+      buildPart(valve, 'slot_x', 'series', qaTable, 42).serialNo,
+    );
   });
 });

@@ -96,9 +96,20 @@ export function tightenedBand(
   return [band[1] - (band[1] - band[0]) * factor, band[1]];
 }
 
-/** The serial a slot's n-th unit carries. Stable across runs by construction. */
-export function serialFor(slotId: string, attempt: number): string {
-  return `${slotId}#${attempt}`;
+/**
+ * The serial a slot's n-th unit of a given part carries.
+ *
+ * The part id is in here, and it has to be. Without it, two different parts
+ * fitted to the same slot draw the same fraction of their bands — the swapped
+ * part inherits the old one's luck — and they carry the *same serial number*,
+ * which makes the post-mortem's part history (§7 ⑥) ambiguous about which
+ * unit it is talking about. Swapping a part is changing that part, and §5.4
+ * says a changed part re-rolls.
+ *
+ * Stable across runs by construction: nothing here depends on order or time.
+ */
+export function serialFor(partId: string, slotId: string, attempt: number): string {
+  return `${partId}@${slotId}#${attempt}`;
 }
 
 /** How many units a screening test may reject before it takes what it gets. */
@@ -127,13 +138,13 @@ export function buildPart(
   const target = tightenedBand(def.reliabilityBand, qa.bandFactor);
 
   const screenedOut: string[] = [];
-  let serialNo = serialFor(slotId, 0);
+  let serialNo = serialFor(def.id, slotId, 0);
   let drawn = drawReliability(seed, serialNo, def.reliabilityBand);
 
   if (qa.bandFactor < 1) {
     for (let attempt = 1; attempt < MAX_SCREENING_ATTEMPTS && drawn < target[0]; attempt += 1) {
       screenedOut.push(serialNo);
-      serialNo = serialFor(slotId, attempt);
+      serialNo = serialFor(def.id, slotId, attempt);
       drawn = drawReliability(seed, serialNo, def.reliabilityBand);
     }
   }
