@@ -15,7 +15,15 @@ import { hashUnit } from '../sim/rng.js';
 
 import type { CampaignState } from './campaign.js';
 
-export type Specialty = 'prop' | 'avionics' | 'comms' | 'power';
+/**
+ * The four specialisations, as a value rather than only a type.
+ *
+ * Same shape as `QA_LEVELS` and for the same reason: a save read back from
+ * storage has to be checked against the real set, and a bare union gives a
+ * parser nothing to check against.
+ */
+export const SPECIALTIES = ['prop', 'avionics', 'comms', 'power'] as const;
+export type Specialty = (typeof SPECIALTIES)[number];
 
 export interface StaffData {
   readonly maxEngineers: number;

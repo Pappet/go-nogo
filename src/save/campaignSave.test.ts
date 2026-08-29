@@ -230,6 +230,18 @@ describe('what a hand-edited save cannot smuggle in', () => {
     expect(parseSave(JSON.stringify(broken))).toBeNull();
   });
 
+  it('refuses an engineer whose specialty is not one of the four', () => {
+    // Fails soft downstream — `measureDurationOverrides` iterates the known
+    // specialties, so it never matches — but they keep drawing a salary in
+    // `weeklySalaries`, and a payroll line that buys nothing is easy to miss.
+    const broken = JSON.parse(serializeSave(aSave())) as Record<string, unknown>;
+    const campaign = broken.campaign as Record<string, unknown>;
+    const staff = campaign.staff as { hired: Record<string, unknown>[] };
+    staff.hired[0].specialty = 'guidance';
+
+    expect(parseSave(JSON.stringify(broken))).toBeNull();
+  });
+
   it('refuses a campaign that has lost a market', () => {
     // `adjustReputation` adds to what it reads back. A missing market does not
     // read as zero, it reads as NaN — and then it spreads through the books.

@@ -26,7 +26,7 @@ import { type CampaignState, MARKETS } from '../economy/campaign.js';
 import type { MarketId } from '../economy/doctrine.js';
 import type { Contract } from '../economy/markets.js';
 import type { SandboxState } from '../economy/scenario.js';
-import type { StaffState } from '../economy/staff.js';
+import { SPECIALTIES, type Specialty, type StaffState } from '../economy/staff.js';
 import type { TechState } from '../economy/techTree.js';
 import type { VehicleConfig } from '../economy/vehicle.js';
 import { QA_LEVELS, type QaLevel } from '../sim/parts/partInstance.js';
@@ -209,6 +209,19 @@ function parseTech(value: unknown): TechState | null {
   return { levels, forks, data: value.data };
 }
 
+function isSpecialty(value: unknown): value is Specialty {
+  return typeof value === 'string' && (SPECIALTIES as readonly string[]).includes(value);
+}
+
+/**
+ * The specialty is checked against the four that exist, not against `string`.
+ *
+ * This one fails soft rather than loudly — `measureDurationOverrides` iterates
+ * the known specialties, so an unrecognised one simply never matches — which
+ * is exactly why it is worth checking: the engineer still draws a salary every
+ * week in `weeklySalaries` while doing nothing at all, and a payroll line that
+ * quietly buys nothing is harder to notice than a crash.
+ */
 function parseStaff(value: unknown): StaffState | null {
   if (!isRecord(value) || !Array.isArray(value.hired)) return null;
   const hired = [];
@@ -216,8 +229,8 @@ function parseStaff(value: unknown): StaffState | null {
     if (!isRecord(raw)) return null;
     const { id, name, specialty, salary } = raw;
     if (typeof id !== 'string' || typeof name !== 'string') return null;
-    if (typeof specialty !== 'string' || !isFiniteNumber(salary)) return null;
-    hired.push({ id, name, specialty: specialty as StaffState['hired'][number]['specialty'], salary });
+    if (!isSpecialty(specialty) || !isFiniteNumber(salary)) return null;
+    hired.push({ id, name, specialty, salary });
   }
   return { hired };
 }
