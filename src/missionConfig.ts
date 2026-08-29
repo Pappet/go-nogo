@@ -21,6 +21,7 @@ import scenarioData from './data/scenarios.json' with { type: 'json' };
 import staffData from './data/staff.json' with { type: 'json' };
 import techTreeData from './data/techtree.json' with { type: 'json' };
 import tutorialData from './data/tutorials.json' with { type: 'json' };
+import { type MissionDataFiles, computeDataVersion } from './replay/run.js';
 import { type ChecklistDef, type MissionConfigInput } from './sim/countdown.js';
 import { type CauseGraphData, loadCauseGraph } from './sim/diagnosis/causeGraph.js';
 import type { PriorSettings } from './sim/diagnosis/priors.js';
@@ -61,6 +62,38 @@ export const causeGraphData = causesData as unknown as CauseGraphData;
 
 /** One loaded graph for the lookups that do not want to rebuild it each call. */
 const sharedGraph = loadCauseGraph(causeGraphData);
+
+/**
+ * Every data file a flight is decided by, in one place (§8.2 rule 7).
+ *
+ * One function rather than a constant so a test can hash a modified catalogue
+ * without the module holding a stale copy of the shipped one.
+ */
+export function missionDataFiles(): MissionDataFiles {
+  return {
+    rocket,
+    pitchProgram,
+    checklist,
+    qaLevels,
+    parts: partCatalogue,
+    causes: causeGraphData,
+    anomalies: anomalySettings,
+    priors: priorSettings,
+    exposure: phaseExposure,
+    comms: groundStations,
+  };
+}
+
+/**
+ * The version stamp a run and a save carry.
+ *
+ * Computed rather than cached: it is asked for once when a save is written and
+ * once when one is read, and a cached hash that missed a hot-reloaded data file
+ * would be worse than no check at all.
+ */
+export function dataVersion(): string {
+  return computeDataVersion(missionDataFiles());
+}
 
 /** A measure's catalogue duration, before any payroll shortens it (§6.5). */
 export function baseMeasureDuration(measureId: string): number {

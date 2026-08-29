@@ -15,7 +15,7 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
-import { createMissionConfig } from '../missionConfig.js';
+import { createMissionConfig, dataVersion } from '../missionConfig.js';
 import { createMissionState } from '../sim/countdown.js';
 import { TICKS_PER_SECOND, type Command } from '../sim/engine.js';
 import { buildMissionReport, verdictLine } from '../sim/diagnosis/postMortem.js';
@@ -24,7 +24,6 @@ import { HASH_INTERVAL_TICKS, play, playRun, verifyRun } from './playback.js';
 import {
   GAME_VERSION,
   type Run,
-  computeDataVersion,
   deserializeRun,
   serializeRun,
   sliceRun,
@@ -64,7 +63,7 @@ function recordRun(): Run {
   const result = play(config, COMMANDS, RUN_LENGTH_TICKS);
   return {
     gameVersion: GAME_VERSION,
-    dataVersion: computeDataVersion(config.rocket, config.pitchProgram, config.checklist),
+    dataVersion: dataVersion(),
     seed: SEED,
     configuration: { rocketName: config.rocket.name, missionKey: config.missionKey },
     commands: COMMANDS,
@@ -84,16 +83,15 @@ describe('replay fixture (seed 42)', () => {
   const fixture = deserializeRun(readFileSync(FIXTURE_PATH, 'utf-8'));
 
   it('was flown against the current data files', () => {
-    // A change to rocket.json or pitchProgram.json invalidates the run before
-    // a single tick is simulated (concept §8.2 rule 7).
-    expect(fixture.dataVersion).toBe(
-      computeDataVersion(config.rocket, config.pitchProgram, config.checklist),
-    );
+    // A change to any file the flight is decided by — the rocket, the parts
+    // catalogue, the cause graph, the exposure table — invalidates the run
+    // before a single tick is simulated (concept §8.2 rule 7).
+    expect(fixture.dataVersion).toBe(dataVersion());
     expect(fixture.gameVersion).toBe(GAME_VERSION);
   });
 
   it('reproduces every recorded state hash', () => {
-    const result = verifyRun(fixture, config);
+    const result = verifyRun(fixture, config, dataVersion());
     expect(result.firstMismatchTick).toBe(-1);
     expect(result.ok).toBe(true);
     expect(result.checked).toBe(RUN_LENGTH_TICKS / HASH_INTERVAL_TICKS + 1);
@@ -166,14 +164,14 @@ describe('replay fixture (seed 42)', () => {
         index === 4 ? { ...entry, sha256: 'deadbeef' } : entry,
       ),
     };
-    const result = verifyRun(tampered, config);
+    const result = verifyRun(tampered, config, dataVersion());
     expect(result.ok).toBe(false);
     expect(result.firstMismatchTick).toBe(fixture.stateHashes[4].tick);
   });
 
   it('rejects a run flown against different data', () => {
     const otherData: Run = { ...fixture, dataVersion: 'f'.repeat(64) };
-    expect(verifyRun(otherData, config).ok).toBe(false);
+    expect(verifyRun(otherData, config, dataVersion()).ok).toBe(false);
   });
 });
 
