@@ -14,7 +14,7 @@ import {
 import { Engine } from '../sim/engine.js';
 
 import { hashMissionState } from './hash.js';
-import { type Run, type StateHash, computeDataVersion, lastCommandTick } from './run.js';
+import { type Run, type StateHash, lastCommandTick } from './run.js';
 
 /** Concept §8.2 rule 8: a hash every 600 ticks localises a desync to 30 s. */
 export const HASH_INTERVAL_TICKS = 600;
@@ -107,12 +107,11 @@ export interface VerificationResult {
  * desync is localised to one 30-second window instead of "somewhere in the
  * flight" (concept §8.2 rule 8).
  */
-export function verifyRun(run: Run, config: MissionConfigInput): VerificationResult {
-  const expectedDataVersion = computeDataVersion(
-    config.rocket,
-    config.pitchProgram,
-    config.checklist,
-  );
+export function verifyRun(
+  run: Run,
+  config: MissionConfigInput,
+  expectedDataVersion: string,
+): VerificationResult {
   if (run.dataVersion !== expectedDataVersion) {
     return { ok: false, firstMismatchTick: 0, checked: 0 };
   }
