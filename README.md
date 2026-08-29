@@ -11,13 +11,11 @@
 
 [![CI](https://github.com/Pappet/go-nogo/actions/workflows/ci.yml/badge.svg)](https://github.com/Pappet/go-nogo/actions/workflows/ci.yml)
 [![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
-[![Svelte
-5](https://img.shields.io/badge/Svelte-5-FF3E00?logo=svelte&logoColor=white)](https://svelte.dev/)
+[![Svelte 5](https://img.shields.io/badge/Svelte-5-FF3E00?logo=svelte&logoColor=white)](https://svelte.dev/)
 [![Vite](https://img.shields.io/badge/Vite-7-646CFF?logo=vite&logoColor=white)](https://vitejs.dev/)
 [![Vitest](https://img.shields.io/badge/Vitest-tested-6E9F18?logo=vitest&logoColor=white)](https://vitest.dev/)
 [![Node](https://img.shields.io/badge/Node-%3E%3D22-339933?logo=node.js&logoColor=white)](https://nodejs.org/)
-[![PRs
-Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/Pappet/go-nogo/pulls)
+[![PRs Welcome](https://img.shields.io/badge/PRs-welcome-brightgreen.svg)](https://github.com/Pappet/go-nogo/pulls)
 
 > **Mission-control spaceflight management where you are the flight director and the startup CEO — in one chair.**
 
@@ -50,8 +48,6 @@ seed always tells the same story.
 | ♻️ **Replay value** | Decision space, not dice — deterministic seeds, forks, post-mortems |
 
 ## 🎮 Gameplay
-
-> *Replay value comes from decision space, not from dice.* — the design motto everything below serves.
 
 ### The Core Loop
 
@@ -140,7 +136,7 @@ npm test        # full test suite
 | Script | What it does |
 |---|---|
 | `npm run dev` | 🔥 Vite dev server with HMR |
-| `npm run build` | Production build (type-checked by Vite pipeline) |
+| `npm run build` | Production build — type-checked separately by `npm run typecheck` |
 | `npm run preview` | Serve the production build locally |
 | `npm run typecheck` | `tsc --noEmit` — strict, zero `any` |
 | `npm run check` | `svelte-check` — because `tsc` does not read Svelte templates |
@@ -160,7 +156,7 @@ src/
 │   ├── systems/      # Anomaly runtime
 │   └── parts/        # Serial-numbered parts, QA, redundancy
 ├── economy/      # 💼 Between-missions layer (no ticks here)
-│                    # riskBudget · markets · reputation · staff · techTree · campaign · doctrine · scenario · bankruptcy
+│                    # riskBudget · markets · staff · techTree · campaign (incl. reputation) · doctrine · scenario · bankruptcy · vehicle
 ├── data/         # 📋 JSON tuning data — every number lives here, never hard-coded
 ├── replay/       # 🎞️ Deterministic replay, SHA-256 state hashing, seed-42 fixtures
 ├── save/         # 💾 Campaign persistence + bit-exact mid-mission resume
@@ -210,8 +206,8 @@ A green pipeline is the badge-worthy gate: 🟢 all of it, every push.
 | **0 · The Countdown** | ✅ **Done** | Deterministic sim engine, Kepler physics, launch console, replay fixtures + SHA-256 state hashing |
 | **1 · Diagnosis** | ✅ **Done** | Anomaly runtime, diagnosis with cause graph + priors, measures under resource scarcity, post-mortem |
 | **2 · The Game Emerges** | 🔨 **In progress** | Parts with serial numbers / QA / redundancy · live risk budget · configurator console · 3 doctrines · 3 markets with reputation · tech tree with exclusive forks · COMMS console · staff · bankruptcy soft fail · mid-mission save · 2 scenarios + sandbox unlock · tutorial missions · i18n string externalisation · hotkey rebinding |
-| **3a** | ⬜ *Not started* | Fleet ops, light delay |
-| **3b** | ⬜ *Not started* | Policies, leaderboard & challenges (backend) |
+| **3a** | ⬜ *Not started* | Light delay, policy editor, real-time mode — one vehicle |
+| **3b** | ⬜ *Not started* | Fleet ops (up to 3 vehicles), own relay as failing infrastructure, insurance, investors, leaderboard backend, daily challenge |
 | **4** | ⬜ *Not started* | Ghost replays, post-mortem export, achievements, modding, Steam / Tauri |
 
 Later phases are listed for orientation only — nothing beyond Phase 2 is designed, scaffolded or
