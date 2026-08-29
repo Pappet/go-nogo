@@ -14,8 +14,8 @@ import {
   defaultVehicle,
   effectiveExposure,
   effectivePartDef,
-  pitchProgram,
   contracts,
+  dataVersion,
   doctrineById,
   groundStations,
   scenarioById,
@@ -133,14 +133,38 @@ import {
   periapsisRadius_m,
   stateToElements,
 } from '../sim/physics/kepler.js';
-import { GAME_VERSION, type Run, computeDataVersion } from '../replay/run.js';
+import { GAME_VERSION, type Run } from '../replay/run.js';
+import {
+  SAVE_KEY,
+  SAVE_SCHEMA_VERSION,
+  type SavedGame,
+  missionIsFlyable,
+  parseSave,
+  savedMissionInputs,
+  serializeSave,
+} from '../save/campaignSave.js';
 
 import { playAlert, playBeep, playIgnitionRumble, playSwitchClick, unlockAudio } from './audio/synth.js';
 import { formatMissionClock } from './format.js';
 import { TrailSampler } from './trail.js';
 
-const SAVE_KEY = 'go-nogo/run';
 const AUTOSAVE_INTERVAL_MS = 30000;
+
+/**
+ * The number a new campaign is drawn against (§6, §8.2 rule 5).
+ *
+ * Every part serial, every week's board and every month's hiring pool hangs
+ * off this one value, so a fixed one made every campaign draw the same
+ * hardware and be offered the same work — three doctrines repainting one
+ * company rather than three companies. Randomising it is the one place in the
+ * game that is allowed to: this module is the wall-clock side of the boundary,
+ * and once drawn the seed is saved and never moves again, which is what keeps
+ * §5.4's surgical re-roll and the post-mortem's what-if honest.
+ */
+function freshCampaignSeed(): number {
+  return Math.floor(Math.random() * 0x100000000);
+}
+
 /** Shortest gap between two map trail samples, in simulated ticks. */
 const TRAIL_INTERVAL_TICKS = 10;
 /** Points the trail keeps. Reaching it halves the resolution, never the span. */
@@ -291,14 +315,24 @@ export class Mission {
       missionKey: nextMissionKey(this.campaign),
       vehicle: this.vehicleConfig,
       tech: this.tech,
-      measureDurations: measureDurationOverrides(staffTable, this.staff, (measureId) =>
-        baseMeasureDuration(measureId),
-      ),
+      measureDurations: this.currentMeasureDurations,
       researchData: this.contract?.researchData ?? 0,
     });
   }
-  /** Counts the missions this session has rolled, for the mission key. */
-  private missionSerial = 1;
+
+  /**
+   * Team-query durations as the payroll has left them (§6.5).
+   *
+   * Read by `reconfigure` and written into the save, from one place: a save
+   * that recorded different durations from the ones the flight was built with
+   * would resume into measures that finish at other ticks, which is a desync
+   * wearing a plausible face.
+   */
+  private get currentMeasureDurations(): Readonly<Record<string, number>> {
+    return measureDurationOverrides(staffTable, this.staff, (measureId) =>
+      baseMeasureDuration(measureId),
+    );
+  }
 
   /** What the vehicle currently flying was built to. */
   private vehicleConfig: VehicleConfig = defaultVehicle;
@@ -307,7 +341,7 @@ export class Mission {
   private plannerOpen = false;
   /** Chosen once per campaign (§6.1). Defaults until a campaign picks one. */
   private doctrine: DoctrineDef = doctrines[0];
-  private campaign: CampaignState = createCampaign(doctrines[0], 42, defaultVehicle);
+  private campaign: CampaignState = createCampaign(doctrines[0], freshCampaignSeed(), defaultVehicle);
   private contract: Contract | null = null;
   private tech: TechState = createTechState();
   private staff: StaffState = createStaffState();
@@ -511,7 +545,7 @@ export class Mission {
     this.vehicleConfig = this.draft;
     this.plannerOpen = false;
     this.reconfigure();
-    this.clearSave();
+    this.dropMission();
     this.reset();
   }
 
@@ -523,7 +557,7 @@ export class Mission {
    * vehicle comes back unchanged, and the player gets to diagnose it properly.
    */
   retrySameMission(): void {
-    this.clearSave();
+    this.dropMission();
     this.reset();
   }
 
@@ -537,11 +571,14 @@ export class Mission {
   retryNewConfiguration(): void {
     // The campaign has moved on: the flown contract is booked, the week has
     // turned, and the next mission is a new flight rather than the same one.
-    this.reconfigure();
+    // Releasing the contract *before* rebuilding matters — the science aboard
+    // is an input to the mission, and rebuilding first would carry the paid-out
+    // contract's research into a flight that is no longer carrying it.
     this.contract = null;
+    this.reconfigure();
     this.draft = this.vehicleConfig;
-    this.plannerOpen = true;
-    this.clearSave();
+    this.dropMission();
+    // `reset` closes the planner; §5.4 wants it open, so this comes after.
     this.reset();
     this.plannerOpen = true;
     this.telemetry = this.snapshot();
@@ -574,7 +611,7 @@ export class Mission {
     } else {
       this.reconfigure();
     }
-    this.clearSave();
+    this.dropMission();
     this.reset();
     this.plannerOpen = this.tutorial === null;
     this.telemetry = this.snapshot();
@@ -592,7 +629,7 @@ export class Mission {
     else if (!enterSandbox(this.sandbox)) return;
     this.contract = null;
     this.reconfigure();
-    this.clearSave();
+    this.dropMission();
     this.reset();
     this.plannerOpen = true;
     this.telemetry = this.snapshot();
@@ -605,6 +642,10 @@ export class Mission {
 
   /**
    * Restarts the campaign on the current doctrine and scenario.
+   *
+   * A new campaign draws a new seed, and that is what makes it a new company
+   * rather than the same one under a new name: the seed decides every part
+   * serial, every week's board and every month's hiring pool (§8.2 rule 5).
    *
    * Doctrine first, then scenario: the doctrine decides what kind of company
    * this is, the scenario decides what it is standing in — so "Inherited
@@ -621,7 +662,7 @@ export class Mission {
 
     this.vehicleConfig = legal(startingVehicle(this.scenario, defaultVehicle));
     this.draft = this.vehicleConfig;
-    this.campaign = createCampaign(this.doctrine, this.campaign.seed, this.vehicleConfig);
+    this.campaign = createCampaign(this.doctrine, freshCampaignSeed(), this.vehicleConfig);
     applyScenario(this.campaign, this.scenario);
 
     this.contract = null;
@@ -634,16 +675,76 @@ export class Mission {
     this.sandbox = createSandboxState();
 
     this.reconfigure();
-    this.clearSave();
+    this.dropMission();
     this.reset();
     this.plannerOpen = true;
     this.telemetry = this.snapshot();
   }
 
-  // ---------- Save and resume: a run truncated at a tick (§8.2 rule 9) ----------
+  // ---------- Save and resume: a campaign, and the flight inside it ----------
 
   /**
-   * Writes the save and notes when.
+   * Everything worth keeping, as one object.
+   *
+   * The mission half records the inputs `reconfigure` was called with rather
+   * than pointing at the campaign, because the two come apart the moment a
+   * flight settles: `settleContract` turns the week and the mission count, and
+   * a campaign re-read afterwards would name the *next* mission. What was
+   * flown is a fact, and it is written down as one.
+   */
+  private toSave(): SavedGame {
+    const version = dataVersion();
+    const inFlight = this.commands.length > 0;
+    const run: Run = {
+      gameVersion: GAME_VERSION,
+      dataVersion: version,
+      seed: this.config.seed,
+      configuration: { rocketName: rocket.name, missionKey: this.config.missionKey },
+      commands: this.commands,
+      stateHashes: [],
+    };
+
+    return {
+      schemaVersion: SAVE_SCHEMA_VERSION,
+      gameVersion: GAME_VERSION,
+      dataVersion: version,
+      campaign: {
+        state: this.campaign,
+        scenarioId: this.scenario.id,
+        vehicle: this.vehicleConfig,
+        contract: this.contract,
+        tech: this.tech,
+        staff: this.staff,
+        finances: this.finances,
+        sandbox: this.sandbox,
+      },
+      mission: inFlight
+        ? {
+            run,
+            tick: this.engine.tick,
+            vehicle: this.vehicleConfig,
+            tech: this.tech,
+            measureDurations: this.currentMeasureDurations,
+            researchData: this.contract?.researchData ?? 0,
+            settled: this.settled,
+            tutorialId: this.tutorial?.id ?? null,
+          }
+        : null,
+    };
+  }
+
+  /** Writes the save and notes when. Never lets storage take the launch down. */
+  private write(save: SavedGame): void {
+    if (typeof localStorage === 'undefined') return;
+    try {
+      localStorage.setItem(SAVE_KEY, serializeSave(save));
+    } catch {
+      // A full or blocked storage must never take the launch down with it.
+    }
+  }
+
+  /**
+   * Saves, and says so.
    *
    * §9 asks for the mid-mission save to be *prominent*, and the auto-save was
    * already running silently — which is the worst of both, because a player
@@ -651,73 +752,111 @@ export class Mission {
    * instead of when they want to.
    */
   save(): void {
-    if (typeof localStorage === 'undefined') return;
-    const run: Run = {
-      gameVersion: GAME_VERSION,
-      dataVersion: computeDataVersion(rocket, pitchProgram, checklist),
-      seed: this.config.seed,
-      configuration: { rocketName: rocket.name, missionKey: this.config.missionKey },
-      commands: this.commands,
-      stateHashes: [],
-    };
-    try {
-      localStorage.setItem(SAVE_KEY, JSON.stringify({ run, tick: this.engine.tick }));
-      this.savedAt = formatMissionClock(this.telemetry.clock_s);
-      this.telemetry = this.snapshot();
-    } catch {
-      // A full or blocked storage must never take the launch down with it.
-    }
+    this.write(this.toSave());
+    this.savedAt = formatMissionClock(this.telemetry.clock_s);
+    this.telemetry = this.snapshot();
   }
 
-  /** Replays a stored run back to its tick. Returns false when there is none. */
+  /**
+   * Drops the flight but keeps the company.
+   *
+   * Every path that starts a different mission comes through here — a re-plan,
+   * a retry, a tutorial, entering the sandbox. None of them is a reason to
+   * forget how much money the player has, which is what removing the save
+   * would do now that the save is the campaign as well.
+   */
+  private dropMission(): void {
+    this.savedAt = null;
+    this.write({ ...this.toSave(), mission: null });
+  }
+
+  /**
+   * Restores the campaign, and the flight in it when there is one.
+   *
+   * Returns true only when a flight was resumed — the caller uses it to decide
+   * whether to tell the player, and being handed back your own company is not
+   * news. The two halves are restored independently on purpose: a change to
+   * the tuning data invalidates the ascent, never the books (§8.2 rule 7).
+   */
   resume(): boolean {
     if (typeof localStorage === 'undefined') return false;
-    const raw = localStorage.getItem(SAVE_KEY);
-    if (raw === null) return false;
-
-    try {
-      const saved = JSON.parse(raw) as { run: Run; tick: number };
-      if (saved.run.dataVersion !== computeDataVersion(rocket, pitchProgram, checklist)) {
-        // Flown against different numbers: the run would not reproduce.
-        return false;
-      }
-      if (typeof saved.run.configuration?.missionKey !== 'string') {
-        // Saved before the mission key was recorded: which crisis it was flying
-        // is no longer knowable, so resuming it would be a guess.
-        return false;
-      }
-      if (saved.run.commands.length === 0) {
-        // Nothing was ever commanded, so the save restores a vehicle sitting on
-        // the pad — no different from starting fresh, and not worth announcing.
-        return false;
-      }
-      // The mission key decides the anomalies, so a save flown under a
-      // different one would resume into a different crisis.
-      this.config = createMissionConfig({
-        seed: saved.run.seed,
-        missionKey: saved.run.configuration.missionKey,
-      });
-      this.reset();
-      for (const command of saved.run.commands) this.engine.inject(command);
-      // Keep the serial ahead of the restored key, so "new mission" does not
-      // hand back a mission this session has already flown.
-      const serial = Number(saved.run.configuration.missionKey.replace(/^mission-/, ''));
-      if (Number.isFinite(serial) && serial >= this.missionSerial) this.missionSerial = serial;
-      this.commands = [...saved.run.commands];
-      this.engine.runTo(saved.tick);
-      this.announcedEvents = this.state.events.length;
-      this.captureTrail();
-      this.resumedFromSave = true;
-      this.telemetry = this.snapshot();
-      return true;
-    } catch {
+    const save = parseSave(localStorage.getItem(SAVE_KEY));
+    if (save === null) {
+      // Nothing stored — or nothing readable. Either way this is a new
+      // company, and it is written down now rather than at the first
+      // auto-save: the seed was drawn a moment ago, and a reload before the
+      // save would draw a different one and call it the same campaign.
+      this.dropMission();
       return false;
     }
+
+    if (!this.restoreCampaign(save)) return false;
+    if (!missionIsFlyable(save, GAME_VERSION, dataVersion()) || save.mission === null) {
+      // The company survives; the ascent does not. Rebuild the mission the
+      // campaign is *standing on*, which is where a player who lost a flight
+      // to a data change would otherwise have to click to get anyway.
+      this.reconfigure();
+      this.reset();
+      this.plannerOpen = true;
+      this.telemetry = this.snapshot();
+      return false;
+    }
+
+    const mission = save.mission;
+    this.tutorial = mission.tutorialId === null ? null : this.knownTutorial(mission.tutorialId);
+    // The saved inputs, not the campaign's current ones: this is the mission
+    // that was flown, mass, anomalies, measure durations and all.
+    this.config = createMissionConfig(savedMissionInputs(mission));
+    this.vehicleConfig = mission.vehicle;
+    this.draft = mission.vehicle;
+
+    this.reset();
+    for (const command of mission.run.commands) this.engine.inject(command);
+    this.commands = [...mission.run.commands];
+    this.engine.runTo(mission.tick);
+
+    this.settled = mission.settled;
+    this.savedAt = formatMissionClock(countdownDisplay_s(this.state));
+    this.announcedEvents = this.state.events.length;
+    this.captureTrail();
+    this.resumedFromSave = true;
+    this.telemetry = this.snapshot();
+    return true;
   }
 
-  clearSave(): void {
-    if (typeof localStorage === 'undefined') return;
-    localStorage.removeItem(SAVE_KEY);
+  /**
+   * Puts the company back, or refuses the save.
+   *
+   * A doctrine or scenario this build no longer ships is the one thing that
+   * cannot be worked around: every price, every reputation spread and every
+   * locked QA level comes out of it, so a campaign missing its doctrine is not
+   * a campaign with a gap — it is numbers with nothing to mean.
+   */
+  private restoreCampaign(save: SavedGame): boolean {
+    const doctrine = doctrines.find((entry) => entry.id === save.campaign.state.doctrineId);
+    const scenario = scenarios.find((entry) => entry.id === save.campaign.scenarioId);
+    if (doctrine === undefined || scenario === undefined) return false;
+
+    this.doctrine = doctrine;
+    this.scenario = scenario;
+    this.campaign = save.campaign.state;
+    this.vehicleConfig = save.campaign.vehicle;
+    this.draft = save.campaign.vehicle;
+    this.contract = save.campaign.contract;
+    this.tech = save.campaign.tech;
+    this.staff = save.campaign.staff;
+    this.finances = save.campaign.finances;
+    this.sandbox = save.campaign.sandbox;
+    return true;
+  }
+
+  /** A tutorial the save names but this build no longer ships is simply gone. */
+  private knownTutorial(tutorialId: string): TutorialDef | null {
+    try {
+      return tutorialById(tutorialId);
+    } catch {
+      return null;
+    }
   }
 
   // ---------- Internals ----------
